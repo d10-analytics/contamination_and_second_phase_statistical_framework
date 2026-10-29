@@ -1,0 +1,8 @@
+#!/bin/sh
+# Reads text on stdin; exits 1 and prints offending lines if any forbidden marker is present.
+PATTERN='claude|anthropic|codex|copilot|openai|generated with|co-authored-by'
+hits=$(grep -n -i -E "$PATTERN")
+if [ -n "$hits" ]; then
+    printf '%s\n' "$hits" >&2
+    exit 1
+fi

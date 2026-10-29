@@ -27,3 +27,7 @@ The hypothesis testing framework is designed for regulatory and quality control 
 ## License
 
 This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
+
+## Development
+
+After cloning, enable the repository hooks with `git config core.hooksPath .githooks`.
