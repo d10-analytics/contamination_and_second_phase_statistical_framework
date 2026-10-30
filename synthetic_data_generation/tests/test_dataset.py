@@ -4,9 +4,11 @@
 # behaviour through generate_dataset itself rather than calling a helper. A
 # "seed" is a whole number that makes the random draws repeat exactly.
 
+import dataclasses
 import json
 import math
 
+import numpy
 import pytest
 
 from synthetic_data_generation import dataset
@@ -270,3 +272,56 @@ def test_counter_widens_past_five_digits():
     assert identifiers[99998] == "C1_o99999"
     assert identifiers[-1] == "C1_o100000"
     assert len(set(identifiers)) == 100000
+
+
+def test_entry_streams_and_the_shuffle_follow_the_documented_seed_recipe():
+    """Child i of SeedSequence(seed).spawn(entries + 1) draws entry i, and the last child shuffles."""
+    entry_list = three_entries(1)
+    checked = entries_module.validate_entries(entry_list)
+    plain = dataset.generate_dataset(entry_list, seed=21)
+    shuffled = dataset.generate_dataset(entry_list, seed=21, shuffle=True)
+    children = numpy.random.SeedSequence(21).spawn(len(checked) + 1)
+    # Drawing each entry by hand with its own child shows which child serves
+    # which entry; a reversed or shared mapping gives other diameters.
+    expected = []
+    for position, entry in enumerate(checked):
+        generator = numpy.random.default_rng(children[position])
+        expected.extend(
+            sampling.draw_entry_values(entry, generator, None, None, dataset.DEFAULT_MAX_ATTEMPTS, position + 1)
+        )
+    assert [row.equivalent_diameter_um for row in plain.rows] == expected
+    order = numpy.random.default_rng(children[-1]).permutation(len(plain.rows))
+    expected_ids = []
+    for position in order:
+        expected_ids.append(plain.rows[int(position)].object_id)
+    assert object_ids(shuffled) == expected_ids
+
+
+def test_changing_the_last_entry_leaves_the_shuffle_order_unchanged():
+    """A new gev loc changes only that entry; the shuffled id order uses its own stream."""
+    before_entries = three_entries(1)
+    after_entries = three_entries(1)
+    after_entries[2]["loc"] = 60.0
+    before = dataset.generate_dataset(before_entries, seed=42, shuffle=True)
+    after = dataset.generate_dataset(after_entries, seed=42, shuffle=True)
+    assert diameters_of(before, "C") != diameters_of(after, "C")
+    assert diameters_of(before, "A") == diameters_of(after, "A")
+    assert diameters_of(before, "B") == diameters_of(after, "B")
+    assert object_ids(before) == object_ids(after)
+
+
+def test_class_numbers_follow_first_appearance_not_name_order():
+    """Entries Z(2), A(1), Z(1) make Z class C1 although A sorts first."""
+    entry_list = [gaussian("Z", 2), gaussian("A", 1), gaussian("Z", 1)]
+    result = dataset.generate_dataset(entry_list, seed=4)
+    assert object_ids(result) == ["C1_o00001", "C1_o00002", "C2_o00001", "C1_o00003"]
+    assert [row.feature_label for row in result.rows] == ["Z", "Z", "A", "Z"]
+    counts = [(item.label, item.class_name, item.kept_count) for item in result.class_counts]
+    assert counts == [("C1", "Z", 3), ("C2", "A", 1)]
+
+
+def test_row_fields_are_the_result_columns_in_order():
+    """Each row holds exactly the five column values, in the column order the result reports."""
+    result = dataset.generate_dataset([gaussian("A", 1)], seed=6)
+    field_names = [field.name for field in dataclasses.fields(result.rows[0])]
+    assert tuple(field_names) == result.columns
