@@ -3,17 +3,18 @@
 # separate Python process for "python -m synthetic_data_generation". The save
 # dialog is the one thing a test cannot click, so tkinter's Tk window and its
 # save-file function are replaced by small stand-ins that record how they were
-# called. A "summary" is the text file every run writes beside its CSV; it holds
+# called. On a Python without Tk, a small stand-in tkinter is installed first, so
+# every test here still runs. A "summary" is the text file every run writes beside its CSV; it holds
 # every setting needed to repeat the run exactly.
 
+import importlib
 import json
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
-import tkinter
-import tkinter.filedialog
 
 import synthetic_data_generation
 from synthetic_data_generation import cli
@@ -22,6 +23,7 @@ from synthetic_data_generation import entries as entries_module
 from synthetic_data_generation import outputs
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent.parent
+THIS_TEST_NAME = "test_the_command_line_tests_collect_and_run_without_a_real_tkinter"
 BEGIN_MARKER = "--- BEGIN REPRODUCTION PARAMETERS ---"
 END_MARKER = "--- END REPRODUCTION PARAMETERS ---"
 
@@ -34,6 +36,41 @@ MIXED_ENTRIES = [
 ]
 IMPOSSIBLE_TEXT = '[{"class": "A", "distribution": "gaussian", "N": 2, "mean": 10, "stdev": 1}]'
 IMPOSSIBLE_ARGUMENTS = ["--threshold-lower", "500", "--threshold-upper", "600", "--max-attempts", "20"]
+
+
+class StandInTclError(Exception):
+    """Stands in for the error Tk raises when it cannot open a window."""
+
+
+def stand_in_window():
+    """Pretend to open a window; the dialog tests replace this before use."""
+    raise StandInTclError("the stand-in tkinter cannot open a window")
+
+
+def stand_in_dialog(**options):
+    """Pretend to show the save dialog; the dialog tests replace this before use."""
+    raise StandInTclError("the stand-in tkinter cannot show a dialog")
+
+
+def load_tkinter():
+    """Return the real tkinter, or install and return a small stand-in when it is missing."""
+    try:
+        real_module = importlib.import_module("tkinter")
+        importlib.import_module("tkinter.filedialog")
+    except ImportError:
+        stand_in = types.ModuleType("tkinter")
+        stand_in_dialogs = types.ModuleType("tkinter.filedialog")
+        stand_in.Tk = stand_in_window
+        stand_in.TclError = StandInTclError
+        stand_in.filedialog = stand_in_dialogs
+        stand_in_dialogs.asksaveasfilename = stand_in_dialog
+        sys.modules["tkinter"] = stand_in
+        sys.modules["tkinter.filedialog"] = stand_in_dialogs
+        return stand_in
+    return real_module
+
+
+tkinter = load_tkinter()
 
 
 def mixed_text():
@@ -597,3 +634,22 @@ def test_a_missing_tkinter_asks_for_output_and_writes_nothing(tmp_path, capsys, 
     assert "--output" in error_text
     assert "Traceback" not in error_text
     assert folder_names(tmp_path) == []
+
+
+def test_the_command_line_tests_collect_and_run_without_a_real_tkinter():
+    """With tkinter blocked in a fresh process, this module still collects and its other tests pass."""
+    script = (
+        "import sys\n"
+        "sys.modules['tkinter'] = None\n"
+        "sys.modules['tkinter.filedialog'] = None\n"
+        "import pytest\n"
+        "sys.exit(pytest.main(['-q', '-p', 'no:cacheprovider', '-k', 'not ' + sys.argv[2], sys.argv[1]]))\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(Path(__file__).resolve()), THIS_TEST_NAME],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "error during collection" not in completed.stdout
