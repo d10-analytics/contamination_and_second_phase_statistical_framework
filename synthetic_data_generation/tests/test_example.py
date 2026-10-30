@@ -9,6 +9,7 @@
 
 import ast
 import importlib.util
+import os
 import re
 import shlex
 import subprocess
@@ -64,6 +65,35 @@ def test_example_writes_exactly_three_files_and_reports_identical(tmp_path, caps
     lines = printed_lines(capsys)
     assert lines[-1] == "identical: True"
     assert "'matrix': 300" in lines[0]
+
+
+def test_example_uses_its_fixed_seed_and_sieve_limits(tmp_path, monkeypatch):
+    """The written summary records the script's seed and limits, every diameter is inside them, and two runs match byte for byte."""
+    hide_display(monkeypatch)
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    run_example.main(first)
+    run_example.main(second)
+    parameters = outputs.read_summary(outputs.summary_path_for(first / "example_particles.csv"))
+    assert parameters.seed == run_example.SEED == 20261029
+    assert parameters.threshold_lower == run_example.SIEVE_LOWER_UM == 10.0
+    assert parameters.threshold_upper == run_example.SIEVE_UPPER_UM == 120.0
+    diameters_by_class = run_example.read_csv_back(first / "example_particles.csv")
+    for class_name, diameters in diameters_by_class.items():
+        for diameter in diameters:
+            assert 10.0 <= diameter <= 120.0, class_name
+    assert (first / "example_particles.csv").read_bytes() == (second / "example_particles.csv").read_bytes()
+
+
+def test_module_entry_point_runs_from_the_repository_root(monkeypatch):
+    """Running the module the way the guide says exits 0, prints identical: True and fills the ignored output folder."""
+    hide_display(monkeypatch)
+    command = [sys.executable, "-m", "synthetic_data_generation.example.run_example"]
+    finished = subprocess.run(command, cwd=REPOSITORY_ROOT, capture_output=True, text=True, env=os.environ.copy())
+    assert finished.returncode == 0, finished.stderr
+    assert finished.stdout.splitlines()[-1] == "identical: True"
+    output_folder = REPOSITORY_ROOT / "synthetic_data_generation" / "example" / "output"
+    assert sorted(path.name for path in output_folder.iterdir()) == EXPECTED_FILES
 
 
 def test_example_can_run_twice_into_the_same_folder(tmp_path, capsys, monkeypatch):
@@ -243,6 +273,21 @@ def test_guide_command_line_step_runs_and_writes_both_files(tmp_path):
     assert finished.returncode == 0, finished.stderr
     assert (tmp_path / "from_guide.csv").is_file()
     assert (tmp_path / "from_guide_summary.txt").is_file()
+
+
+def test_guide_command_line_reproduces_the_example_csv(tmp_path, monkeypatch):
+    """The guide's command-line line writes a CSV with the same bytes as the example's CSV."""
+    hide_display(monkeypatch)
+    run_example.main(tmp_path / "example")
+    guide_path, guide_text = read_guide()
+    cli_lines = [line for line in guide_text.splitlines() if line.startswith(CLI_LINE_START)]
+    words = shlex.split(cli_lines[0])
+    words[0] = sys.executable
+    words[words.index("--output") + 1] = str(tmp_path / "from_guide.csv")
+    finished = subprocess.run(words, cwd=REPOSITORY_ROOT, capture_output=True, text=True)
+    assert finished.returncode == 0, finished.stderr
+    example_bytes = (tmp_path / "example" / "example_particles.csv").read_bytes()
+    assert (tmp_path / "from_guide.csv").read_bytes() == example_bytes
 
 
 def test_guide_explains_input_file_risk_and_worst_case():
