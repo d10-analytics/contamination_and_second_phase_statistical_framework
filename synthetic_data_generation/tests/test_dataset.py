@@ -276,6 +276,23 @@ def test_recorded_entries_cannot_be_edited():
     assert dict(result.entries[0]) == gaussian("A", 2, 1.0, 1.0)
 
 
+def test_huge_diameter_raises_one_named_error_and_no_result():
+    """A finite diameter whose area or volume overflows gives a SamplingError naming entry, class and diameter."""
+    # 1e200 makes the power raise OverflowError; 5.5e102 cubes to a finite value
+    # whose product with pi silently becomes infinity. Both must be reported.
+    for mean in (1e200, 5.5e102):
+        entries = [gaussian("A", 2), gaussian("Big class", 1, mean, 1.0)]
+        result = None
+        with pytest.raises(sampling.SamplingError) as error:
+            result = dataset.generate_dataset(entries, seed=1)
+        assert result is None
+        message = str(error.value)
+        assert "entry 2" in message
+        assert "'Big class'" in message
+        assert repr(mean) in message
+        assert not isinstance(error.value, OverflowError)
+
+
 def test_counter_widens_past_five_digits():
     """One class of 100,000 particles ends at C1_o100000 with every id distinct."""
     result = dataset.generate_dataset([gaussian("A", 100000, 100.0, 1.0)], seed=2)
