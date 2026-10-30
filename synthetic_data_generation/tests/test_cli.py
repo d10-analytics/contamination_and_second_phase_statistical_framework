@@ -544,3 +544,44 @@ def test_a_folder_at_the_summary_path_is_reported_even_with_overwrite(tmp_path, 
     assert "is a folder" in error_text
     assert "attempts" not in error_text
     assert folder_names(tmp_path) == ["out_summary.txt"]
+
+
+def make_impossible_summary(tmp_path, capsys):
+    """Write a run, then edit its summary so that replaying it can never keep a particle."""
+    original = write_run(tmp_path, capsys, "original", ["--seed", "3"])
+    edit_block(
+        summary_of(original),
+        {
+            "entries": json.loads(IMPOSSIBLE_TEXT),
+            "threshold_lower": 500,
+            "threshold_upper": 600,
+            "max_attempts": 20,
+        },
+    )
+    return summary_of(original)
+
+
+def test_a_replay_opens_the_dialog_before_it_draws(tmp_path, capsys, monkeypatch):
+    """A replay that cannot keep a particle still asks for the path first, then fails cleanly."""
+    summary_path = make_impossible_summary(tmp_path, capsys)
+    chosen_folder = tmp_path / "chosen"
+    chosen_folder.mkdir()
+    calls = install_dialog(monkeypatch, str(chosen_folder / "out.csv"))
+    code, error_text = run_main(["--from-summary", str(summary_path)], capsys)
+    assert code == 1
+    assert "attempts" in error_text
+    assert len(calls) == 1
+    assert folder_names(chosen_folder) == []
+
+
+def test_a_replay_checks_its_destination_before_it_draws(tmp_path, capsys):
+    """A replay onto an existing CSV reports already-exists, not the sampling error, and keeps the bytes."""
+    summary_path = make_impossible_summary(tmp_path, capsys)
+    existing = tmp_path / "taken.csv"
+    existing.write_bytes(b"keep me")
+    code, error_text = run_main(["--from-summary", str(summary_path), "--output", str(existing)], capsys)
+    assert code == 1
+    assert "already exists" in error_text
+    assert "attempts" not in error_text
+    assert existing.read_bytes() == b"keep me"
+    assert not summary_of(existing).exists()
