@@ -196,9 +196,33 @@ def test_replay_gives_the_same_csv_bytes_and_records_the_summary_path(tmp_path):
     summary_path = tmp_path / "run_summary.txt"
     replayed = outputs.replay_summary(summary_path)
     assert outputs.serialize_csv(replayed).encode("utf-8") == (tmp_path / "run.csv").read_bytes()
-    assert replayed.input_source == str(summary_path)
+    assert replayed.input_source == str(summary_path.resolve())
     outputs.write_outputs(replayed, tmp_path / "again.csv")
-    assert f"Inputs: {str(summary_path)!r}" in summary_text_of(tmp_path / "again.csv")
+    assert f"Inputs: {str(summary_path.resolve())!r}" in summary_text_of(tmp_path / "again.csv")
+
+
+def test_replaying_a_summary_named_text_or_list_shows_its_path_not_the_sentinel(tmp_path, monkeypatch):
+    """A summary file named exactly text or list still gives an inputs line showing its path with repr."""
+    outputs.write_outputs(make_result(), tmp_path / "run.csv")
+    original = (tmp_path / "run_summary.txt").read_bytes()
+    # A relative path is how a file named exactly "text" would be given on the command line.
+    monkeypatch.chdir(tmp_path)
+    for name in ("text", "list"):
+        summary_path = tmp_path / name
+        summary_path.write_bytes(original)
+        replayed = outputs.replay_summary(name)
+        outputs.write_outputs(replayed, tmp_path / f"{name}_again.csv")
+        text = summary_text_of(tmp_path / f"{name}_again.csv")
+        assert f"Inputs: {str(summary_path.resolve())!r}" in text
+        assert "entries given as" not in text
+
+
+def test_replay_of_a_shuffled_thresholded_run_with_a_repeated_class_is_byte_identical(tmp_path):
+    """Seed, both thresholds, shuffle and a repeated class all replay to the same CSV bytes."""
+    original = make_result(threshold_lower=45.0, threshold_upper=55.0, shuffle=True)
+    outputs.write_outputs(original, tmp_path / "run.csv")
+    replayed = outputs.replay_summary(tmp_path / "run_summary.txt")
+    assert outputs.serialize_csv(replayed).encode("utf-8") == (tmp_path / "run.csv").read_bytes()
 
 
 def test_replay_warns_on_stderr_for_another_library_version_and_keeps_the_bytes(tmp_path, capsys):
