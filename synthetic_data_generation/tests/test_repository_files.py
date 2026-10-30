@@ -14,6 +14,7 @@ REPOSITORY_ROOT = PACKAGE_FOLDER.parent
 EXPECTED_REQUIREMENTS = ["numpy>=2.2,<3", "scipy>=1.15,<2", "matplotlib>=3.9,<4"]
 GUIDE_LINK = "](synthetic_data_generation/README.md)"
 OUTPUT_IGNORE_LINE = "synthetic_data_generation/example/output/"
+BYTECODE_IGNORE_LINE = "__pycache__/"
 
 
 def read_lines(path):
@@ -45,7 +46,7 @@ def test_root_readme_links_to_the_package_guide():
     assert GUIDE_LINK in text
 
 
-def test_ignore_file_keeps_agents_line_and_adds_output_folder():
-    """The ignore list keeps its AGENTS.md line and ignores the example output folder."""
+def test_ignore_file_keeps_agents_line_and_adds_output_folder_and_bytecode():
+    """The ignore list keeps its AGENTS.md line and also ignores the example output folder and compiled Python files."""
     lines = read_lines(REPOSITORY_ROOT / ".gitignore")
-    assert lines == ["AGENTS.md", OUTPUT_IGNORE_LINE]
+    assert lines == ["AGENTS.md", OUTPUT_IGNORE_LINE, BYTECODE_IGNORE_LINE]
