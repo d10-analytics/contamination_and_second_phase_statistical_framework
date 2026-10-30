@@ -47,7 +47,7 @@ def stand_in_window():
     raise StandInTclError("the stand-in tkinter cannot open a window")
 
 
-def stand_in_dialog(**options):
+def stand_in_dialog(title=None, confirmoverwrite=True, defaultextension="", filetypes=()):
     """Pretend to show the save dialog; the dialog tests replace this before use."""
     raise StandInTclError("the stand-in tkinter cannot show a dialog")
 
