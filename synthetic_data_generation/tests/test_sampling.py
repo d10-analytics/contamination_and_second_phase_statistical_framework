@@ -154,3 +154,45 @@ def test_cap_counts_consecutive_draws_for_one_point():
     """About 38% of draws are kept here; 2000 points need far more than 50 draws in total but each fits."""
     values = draw(make_gaussian(10.0, 4.0, 2000), 18, lower=8.0, upper=12.0, cap=50)
     assert len(values) == 2000
+
+
+def test_equal_seeds_give_equal_values_and_different_seeds_differ():
+    """The draw uses the generator it is given, so the same seed repeats the same sizes exactly."""
+    # Every later statistic relies on a seed reproducing a dataset, so a draw
+    # that ignored the given generator would break reproducibility silently.
+    entries_to_draw = [make_gaussian(10.0, 4.0, 200), make_gamma(2.0, 3.0, 200), make_gev(0.1, 50.0, 5.0, 200)]
+    for entry in entries_to_draw:
+        first = draw(entry, 21, lower=8.0, upper=60.0)
+        second = draw(entry, 21, lower=8.0, upper=60.0)
+        other = draw(entry, 22, lower=8.0, upper=60.0)
+        assert first == second
+        assert first != other
+
+
+def test_infinite_draws_from_a_valid_gev_are_redrawn():
+    """A gev with shape 1000 draws positive infinity about 40% of the time; only finite sizes are kept."""
+    # A gev shape may be any finite number, so this entry is valid, and
+    # infinity is above zero and inside an open window: only the finite check
+    # stops it from reaching the output.
+    values = draw(make_gev(1000.0, 10.0, 1.0, 500), 23)
+    assert len(values) == 500
+    for value in values:
+        assert math.isfinite(value)
+
+
+def test_sampling_error_names_the_attempt_cap():
+    """The error states the cap itself, not only numbers that happen to contain it, such as the limit 500."""
+    entry = make_gaussian(10, 1, 3)
+    rng = numpy.random.default_rng(17)
+    with pytest.raises(sampling.SamplingError) as caught:
+        sampling.draw_entry_values(entry, rng, 500, 600, 50, 7)
+    assert "max_attempts 50" in str(caught.value)
+
+
+def test_exact_zero_draws_from_a_valid_gamma_are_redrawn():
+    """A gamma with shape 0.001 draws exactly 0.0 about 45% of the time; zero is not a particle size."""
+    # The tiny values underflow to 0.0, which a ">= 0" check would keep, so
+    # this entry tells "strictly above zero" apart from "zero or more".
+    values = draw(make_gamma(0.001, 1.0, 500), 25)
+    assert len(values) == 500
+    assert min(values) > 0
