@@ -12,23 +12,11 @@ import math
 
 from scipy import stats
 
+from synthetic_data_generation import entries
+
 
 class SamplingError(RuntimeError):
     """Raised when a particle size cannot be drawn within the allowed number of attempts."""
-
-
-def convert_threshold(name, value):
-    """Return a sieve limit as a finite float, or raise ValueError naming the limit."""
-    # Booleans are rejected first because Python treats True as the integer 1.
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{name} must be a number, not {value!r}")
-    try:
-        number = float(value)
-    except OverflowError:
-        raise ValueError(f"{name} is too large to use as a number")
-    if not math.isfinite(number):
-        raise ValueError(f"{name} must be a finite number, not {value!r}")
-    return number
 
 
 def validate_thresholds(threshold_lower, threshold_upper):
@@ -36,11 +24,11 @@ def validate_thresholds(threshold_lower, threshold_upper):
     lower = None
     upper = None
     if threshold_lower is not None:
-        lower = convert_threshold("threshold_lower", threshold_lower)
+        lower = entries.convert_parameter("threshold_lower", threshold_lower, "sieve limits")
         if lower < 0:
             raise ValueError(f"threshold_lower must be 0 or more, not {threshold_lower!r}")
     if threshold_upper is not None:
-        upper = convert_threshold("threshold_upper", threshold_upper)
+        upper = entries.convert_parameter("threshold_upper", threshold_upper, "sieve limits")
         if upper <= 0:
             raise ValueError(f"threshold_upper must be above 0, not {threshold_upper!r}")
     if lower is not None and upper is not None and lower >= upper:
