@@ -86,13 +86,19 @@ def test_example_uses_its_fixed_seed_and_sieve_limits(tmp_path, monkeypatch):
 
 
 def test_module_entry_point_runs_from_the_repository_root(monkeypatch):
-    """Running the module the way the guide says exits 0, prints identical: True and fills the ignored output folder."""
+    """Running the module the way the guide says exits 0, prints identical: True and writes the three files into the ignored output folder."""
     hide_display(monkeypatch)
+    output_folder = REPOSITORY_ROOT / "synthetic_data_generation" / "example" / "output"
+    # Files left by an earlier run are removed first, so finding them afterwards
+    # proves this run wrote them into this exact folder.
+    for name in EXPECTED_FILES:
+        (output_folder / name).unlink(missing_ok=True)
     command = [sys.executable, "-m", "synthetic_data_generation.example.run_example"]
     finished = subprocess.run(command, cwd=REPOSITORY_ROOT, capture_output=True, text=True, env=os.environ.copy())
     assert finished.returncode == 0, finished.stderr
-    assert finished.stdout.splitlines()[-1] == "identical: True"
-    output_folder = REPOSITORY_ROOT / "synthetic_data_generation" / "example" / "output"
+    lines = finished.stdout.splitlines()
+    assert lines[-1] == "identical: True"
+    assert f"files written to {output_folder}" in lines
     assert sorted(path.name for path in output_folder.iterdir()) == EXPECTED_FILES
 
 
