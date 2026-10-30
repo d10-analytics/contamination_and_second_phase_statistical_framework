@@ -585,3 +585,15 @@ def test_a_replay_checks_its_destination_before_it_draws(tmp_path, capsys):
     assert "attempts" not in error_text
     assert existing.read_bytes() == b"keep me"
     assert not summary_of(existing).exists()
+
+
+def test_a_missing_tkinter_asks_for_output_and_writes_nothing(tmp_path, capsys, monkeypatch):
+    """Without tkinter and without --output, the run reports one message naming --output and writes nothing."""
+    monkeypatch.setitem(sys.modules, "tkinter", None)
+    monkeypatch.setitem(sys.modules, "tkinter.filedialog", None)
+    code, error_text = run_main(["--input-json", SIMPLE_TEXT, "--seed", "1"], capsys)
+    assert code == 1
+    assert error_text.startswith("error:")
+    assert "--output" in error_text
+    assert "Traceback" not in error_text
+    assert folder_names(tmp_path) == []
