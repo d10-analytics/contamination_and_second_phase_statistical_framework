@@ -136,6 +136,21 @@ def derive_row(class_name, object_id, diameter):
     )
 
 
+def derive_checked_row(class_name, object_id, diameter, entry_number):
+    """Return derive_row's Row, or raise SamplingError when the area or volume does not fit in a float."""
+    try:
+        row = derive_row(class_name, object_id, diameter)
+    except OverflowError:
+        row = None
+    # A product can also overflow silently to infinity, so finiteness is checked too.
+    if row is None or not (math.isfinite(row.contour_area_um2) and math.isfinite(row.volume_um3)):
+        raise sampling.SamplingError(
+            f"entry {entry_number}, class {class_name!r}: the drawn diameter {diameter!r} is too large "
+            "for its area or volume to be calculated; check the entry's distribution parameters"
+        )
+    return row
+
+
 def build_rows(checked_entries, entry_streams, lower, upper, max_attempts):
     """Draw every entry and return (rows in entry order, per-class kept counts) with ids assigned."""
     class_numbers = {}
@@ -152,7 +167,7 @@ def build_rows(checked_entries, entry_streams, lower, upper, max_attempts):
         for diameter in values:
             particle_counters[class_name] += 1
             object_id = format_object_id(class_numbers[class_name], particle_counters[class_name])
-            rows.append(derive_row(class_name, object_id, diameter))
+            rows.append(derive_checked_row(class_name, object_id, diameter, entry_index + 1))
     class_counts = []
     for class_name, class_number in class_numbers.items():
         class_counts.append(ClassCount(f"C{class_number}", class_name, particle_counters[class_name]))
