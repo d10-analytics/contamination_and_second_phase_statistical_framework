@@ -328,4 +328,6 @@ def replay_summary(summary_path):
         max_attempts=parameters.max_attempts,
         shuffle=parameters.shuffle,
     )
-    return replace(result, input_source=str(summary_path))
+    # An absolute path can never equal the plain words "text" or "list" that mark
+    # entries given as text or as a list, even when the summary file is named so.
+    return replace(result, input_source=str(Path(summary_path).resolve()))
