@@ -29,7 +29,7 @@ Windows (untested): `py -m venv %USERPROFILE%\synthetic-data-venv` and then `%US
 
 ## 3. Install the packages
 
-Change into the repository folder (the one that contains `README.md`), then install the packages listed in `synthetic_data_generation/requirements.txt` (NumPy and SciPy draw the random numbers, matplotlib draws the plot). This step needs an internet connection; running the tool afterwards does not.
+Change into the repository root folder (the top folder of this project, the one that also holds `LICENSE` and the folder `synthetic_data_generation`), then install the packages listed in `synthetic_data_generation/requirements.txt` (NumPy and SciPy draw the random numbers, matplotlib draws the plot). This step needs an internet connection; running the tool afterwards does not.
 
 ```
 pip install -r synthetic_data_generation/requirements.txt
@@ -68,10 +68,10 @@ Open `synthetic_data_generation/example/output/example_particles_plot.png` with 
 
 ## 6. The command-line form
 
-The same kind of run can be started from the terminal with your own input file. This line does what step 1 of the example does and writes a CSV and a summary into your home folder:
+The same kind of run can be started from the terminal with your own input file. This line uses the example's own input file, seed and sieve limits (10 and 120 micrometres), so the CSV it writes is byte for byte the same as the example's CSV. It writes into your home folder:
 
 ```
-python3 -m synthetic_data_generation --input-file synthetic_data_generation/example/example_input.jsonl --seed 42 --output ~/synthetic_particles.csv
+python3 -m synthetic_data_generation --input-file synthetic_data_generation/example/example_input.jsonl --seed 20261029 --threshold-lower 10 --threshold-upper 120 --output ~/synthetic_particles.csv
 ```
 
 It writes `~/synthetic_particles.csv` and `~/synthetic_particles_summary.txt`. A second run refuses to replace existing files unless you add `--overwrite`. To recreate an earlier run exactly, use `--from-summary` with the summary file.

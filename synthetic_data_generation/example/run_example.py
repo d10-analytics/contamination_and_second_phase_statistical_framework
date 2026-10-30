@@ -44,7 +44,7 @@ def generate_example_dataset():
 
 
 def read_csv_back(csv_path):
-    """Step 3: read the CSV file from disk and return a dictionary of class name -> list of diameters."""
+    """Step 3: read the CSV file from disk and return a dictionary (a lookup table that pairs each class name with its list of diameters)."""
     diameters_by_class = {}
     with open(csv_path, "r", encoding="utf-8", newline="") as csv_file:
         for row in csv.DictReader(csv_file):
