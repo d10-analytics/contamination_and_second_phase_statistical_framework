@@ -477,3 +477,80 @@ def test_summary_rename_failure_with_no_existing_csv_removes_the_new_csv(tmp_pat
         outputs.write_outputs(make_result(), tmp_path / "run.csv", overwrite=True)
     assert folder_listing(tmp_path) == ["run_summary.txt"]
     assert (tmp_path / "run_summary.txt").read_bytes() == b"old summary"
+
+
+def test_every_setting_round_trips_and_replays_for_all_distributions(tmp_path):
+    """read_summary returns each setting the run used, and replay recreates the bytes for every distribution."""
+    entry_list = [
+        {"class": 'Ä, "x"', "distribution": "gamma", "N": 40, "shape": 2, "scale": 3.0},
+        {"class": "g", "distribution": "gev", "N": 30, "shape": -0.1, "loc": 10, "scale": 2.5},
+        {"class": 'Ä, "x"', "distribution": "gaussian", "N": 5, "mean": 30, "stdev": 7.0},
+    ]
+    result = dataset.generate_dataset(
+        entry_list, threshold_lower=0.5, threshold_upper=60, seed=2**63 + 5, max_attempts=777, shuffle=True
+    )
+    outputs.write_outputs(result, tmp_path / "run.csv")
+    parameters = outputs.read_summary(tmp_path / "run_summary.txt")
+    assert parameters.entries == list(result.entries)
+    assert parameters.threshold_lower == 0.5
+    assert parameters.threshold_upper == 60.0
+    assert parameters.seed == 2**63 + 5
+    assert parameters.max_attempts == 777
+    assert parameters.shuffle is True
+    assert parameters.library_versions == outputs.current_library_versions()
+    replayed = outputs.replay_summary(tmp_path / "run_summary.txt")
+    assert outputs.serialize_csv(replayed).encode("utf-8") == (tmp_path / "run.csv").read_bytes()
+
+
+def test_missing_folder_message_names_the_folder(tmp_path):
+    """The refusal for a missing parent folder names that folder."""
+    missing = tmp_path / "no_such_folder"
+    with pytest.raises(ValueError) as checked:
+        outputs.check_destinations(missing / "run.csv")
+    assert repr(str(missing)) in str(checked.value)
+    with pytest.raises(ValueError) as written:
+        outputs.write_outputs(make_result(), missing / "run.csv")
+    assert repr(str(missing)) in str(written.value)
+    assert folder_listing(tmp_path) == []
+
+
+def message_from_generate(entry_list, settings):
+    """Return the ValueError message generate_dataset gives for these entries and settings."""
+    with pytest.raises(ValueError) as refused:
+        dataset.generate_dataset(
+            entry_list,
+            threshold_lower=settings["threshold_lower"],
+            threshold_upper=settings["threshold_upper"],
+            seed=settings["seed"],
+            max_attempts=settings["max_attempts"],
+            shuffle=settings["shuffle"],
+        )
+    return str(refused.value)
+
+
+def test_read_summary_refusals_match_generate_dataset_messages_exactly(tmp_path):
+    """Each edited value is refused with the very message generate_dataset gives for it."""
+    outputs.write_outputs(make_result(), tmp_path / "run.csv")
+    original = (tmp_path / "run_summary.txt").read_text(encoding="utf-8")
+    summary_path = tmp_path / "edited.txt"
+    good_entry = gaussian("A")
+    broken_entry = {"class": "A", "distribution": "gaussian", "N": 3.0, "mean": 1.0, "stdev": -1.0}
+    cases = [
+        ([broken_entry], {}),
+        ([good_entry], {"threshold_lower": 10, "threshold_upper": 5}),
+        ([good_entry], {"threshold_lower": -1}),
+        ([good_entry], {"seed": -1}),
+        ([good_entry], {"seed": True}),
+        ([good_entry], {"max_attempts": 0}),
+        ([good_entry], {"shuffle": "yes"}),
+    ]
+    for entry_list, changes in cases:
+        settings = {"threshold_lower": None, "threshold_upper": None, "seed": 11, "max_attempts": 100_000, "shuffle": False}
+        settings.update(changes)
+        summary_path.write_text(original, encoding="utf-8")
+        edit_block(summary_path, set_value("entries", entry_list))
+        for key, value in changes.items():
+            edit_block(summary_path, set_value(key, value))
+        with pytest.raises(ValueError) as refused:
+            outputs.read_summary(summary_path)
+        assert str(refused.value) == message_from_generate(entry_list, settings)
