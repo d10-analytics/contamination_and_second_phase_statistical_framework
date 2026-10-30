@@ -1,0 +1,3 @@
+{"class": "corrosion pits", "distribution": "gev", "N": 300, "shape": 0.15, "loc": 55, "scale": 12}
+{"class": "oxide", "distribution": "gaussian", "N": 60, "mean": 80, "stdev": 6}
+{"class": "inclusion", "distribution": "gev", "N": 40, "shape": 0.1, "loc": 35, "scale": 4}
