@@ -299,7 +299,8 @@ SAMPLES = [
 ]
 
 # Code that looks close to a rule but is allowed: a bare "*" that makes the
-# following parameters keyword-only, and a tuple-unpacking assignment.
+# following parameters keyword-only, a plain dataclass and one with keyword
+# arguments, and two comprehensions side by side (not nested).
 ALLOWED_SAMPLES = [
     (
         "bare-star-keyword-only-parameters",
@@ -374,16 +375,51 @@ def test_file_that_does_not_parse_is_a_failure(tmp_path):
     assert rule_names(find_violations(path)) == {"does-not-parse"}
 
 
-def test_package_python_files_are_found_at_run_time():
-    """The discovery finds this very file, so an empty search cannot pass silently."""
-    found = sorted(PACKAGE_FOLDER.rglob("*.py"))
-    assert Path(__file__).resolve() in found
+def find_python_files(folder):
+    """Return every .py file under the folder, including subfolders, in a fixed order."""
+    return sorted(folder.rglob("*.py"))
+
+
+def find_package_violations(folder):
+    """Return one text line per rule broken by any .py file under the folder."""
+    problems = []
+    for path in find_python_files(folder):
+        for rule, line in find_violations(path):
+            problems.append(str(path.relative_to(folder)) + ":" + str(line) + " " + rule)
+    return problems
+
+
+def test_discovery_is_recursive_and_limited_to_python_files(tmp_path):
+    """Discovery returns .py files at any depth and ignores every other kind of file."""
+    deep_folder = tmp_path / "sub" / "deeper"
+    deep_folder.mkdir(parents=True)
+    top_file = tmp_path / "top.py"
+    deep_file = deep_folder / "bad_sample.py"
+    top_file.write_text(OPENING, encoding="utf-8")
+    deep_file.write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("value = 1\n", encoding="utf-8")
+    (deep_folder / "data.json").write_text("{}", encoding="utf-8")
+    assert find_python_files(tmp_path) == [deep_file, top_file]
+
+
+def test_gate_uses_discovery_and_reports_files_in_subfolders(tmp_path):
+    """The gate reports a bad file in a subfolder and ignores a bad-looking non-.py file."""
+    deep_folder = tmp_path / "sub"
+    deep_folder.mkdir()
+    (tmp_path / "top.py").write_text(OPENING, encoding="utf-8")
+    (deep_folder / "bad_sample.py").write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("value = 1\n", encoding="utf-8")
+    problems = find_package_violations(tmp_path)
+    expected_name = str(Path("sub") / "bad_sample.py")
+    assert problems == [expected_name + ":1 opening-comment"]
+
+
+def test_package_discovery_includes_this_file():
+    """The real package list contains this very file, so an empty search cannot pass."""
+    assert Path(__file__).resolve() in find_python_files(PACKAGE_FOLDER)
 
 
 def test_every_package_python_file_is_readable():
     """Every .py file under the package folder, including this one, passes every rule."""
-    problems = []
-    for path in sorted(PACKAGE_FOLDER.rglob("*.py")):
-        for rule, line in find_violations(path):
-            problems.append(str(path.relative_to(PACKAGE_FOLDER)) + ":" + str(line) + " " + rule)
+    problems = find_package_violations(PACKAGE_FOLDER)
     assert problems == [], "\n".join(problems)
