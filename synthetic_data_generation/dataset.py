@@ -9,6 +9,7 @@
 import math
 import secrets
 from dataclasses import dataclass
+from types import MappingProxyType
 
 import numpy
 
@@ -111,6 +112,14 @@ def prepare_entries(entries):
     return entries_module.validate_entries(entries), SOURCE_LIST
 
 
+def freeze_entries(checked_entries):
+    """Return the entries as read-only mappings, so a finished run's record cannot be edited."""
+    frozen = []
+    for entry in checked_entries:
+        frozen.append(MappingProxyType(entry))
+    return tuple(frozen)
+
+
 def format_object_id(class_number, particle_number):
     """Return an id such as C1_o00001; the counter is padded to five digits and widens beyond them."""
     return f"C{class_number}_o{particle_number:0{ID_DIGITS}d}"
@@ -183,7 +192,7 @@ def generate_dataset(
     return DatasetResult(
         columns=COLUMN_NAMES,
         rows=tuple(rows),
-        entries=tuple(checked_entries),
+        entries=freeze_entries(checked_entries),
         threshold_lower=lower,
         threshold_upper=upper,
         seed=seed,
