@@ -1,0 +1,6 @@
+# Packages the synthetic data generator and its example need. The version
+# ranges allow newer fixes but stop before the next major release, which could
+# change how random numbers are drawn. These ranges need Python 3.10 or newer.
+numpy>=2.2,<3
+scipy>=1.15,<2
+matplotlib>=3.9,<4
