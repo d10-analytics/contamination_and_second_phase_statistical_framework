@@ -24,6 +24,10 @@ The framework supports two parallel contamination metrics:
 
 The hypothesis testing framework is designed for regulatory and quality control applications with conservative framing: the null hypothesis is that contamination equals or exceeds a specified threshold, and rejection constitutes statistical evidence that contamination is below the acceptance criterion at the chosen significance level. This conservative framing places the burden of proof on demonstrating cleanliness — the appropriate direction for safety-critical applications.
 
+## Synthetic Data
+
+A small, readable generator that produces example particle measurements for trying the framework lives in `synthetic_data_generation/`. See the [synthetic data guide](synthetic_data_generation/README.md) for how to install and run it.
+
 ## License
 
 This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
