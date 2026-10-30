@@ -4,8 +4,11 @@
 # particles to keep and the distribution's parameters. The text can be one JSON
 # array, one JSON object, or JSONL (one JSON object per line). Every check lives
 # in one function, validate_entries, so text input, file input and a Python list
-# are all judged by exactly the same rules. A problem is always reported as a
-# ValueError whose message names the entry number (counting from 1) or the line.
+# are all judged by exactly the same rules. An ordinary problem with the input
+# (a wrong key, a bad value, broken JSON) is reported as a ValueError whose
+# message names the entry number (counting from 1) or the line. Extreme inputs
+# that Python itself refuses, such as an integer of thousands of digits or
+# arrays nested a hundred thousand levels deep, raise Python's own error.
 
 import json
 import math
@@ -33,7 +36,12 @@ POSITIVE_KEYS = {
 
 # These two characters are not control characters, yet str.splitlines treats
 # them as line breaks, so a class name may not contain them.
-LINE_BREAK_CHARACTERS = (" ", " ")
+LINE_BREAK_CHARACTERS = ("\u2028", "\u2029")
+
+# The characters a JSON value can start with. Text after the first complete
+# value is only treated as more JSONL when it starts like this; anything else
+# (a stray bracket, a comma) is an ordinary JSON error in the whole text.
+VALUE_START_CHARACTERS = '{["-0123456789tfnNI'
 
 READ_ENTRIES_HINT = (
     " If this text is the path of a file, call read_entries(path) instead of parse_entries."
@@ -177,9 +185,18 @@ def parse_text(text, hint):
         value, end = json.JSONDecoder().raw_decode(text, start)
     except json.JSONDecodeError as error:
         raise ValueError(describe_json_error(error, hint))
-    if skip_whitespace(text[end:]) < len(text) - end:
-        # A second value follows the first, so this is JSONL.
-        return parse_lines(text, hint)
+    rest = text[end:]
+    rest_start = skip_whitespace(rest)
+    if rest_start < len(rest):
+        if rest[rest_start] in VALUE_START_CHARACTERS:
+            # Another value follows the first, so this is JSONL.
+            return parse_lines(text, hint)
+        # Anything else is a plain JSON mistake; json.loads reports it with
+        # the line and column in the whole text.
+        try:
+            json.loads(text)
+        except json.JSONDecodeError as error:
+            raise ValueError(describe_json_error(error, hint))
     if isinstance(value, dict):
         return validate_entries([value])
     if isinstance(value, list):
