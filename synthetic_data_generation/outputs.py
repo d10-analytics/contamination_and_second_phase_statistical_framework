@@ -182,7 +182,9 @@ def check_destinations(csv_path, overwrite=False):
         if not destination.is_file():
             raise ValueError(f"{str(destination)!r} exists and is not a regular file")
         if not overwrite:
-            raise ValueError(f"{str(destination)!r} already exists; pass overwrite=True to replace it")
+            raise ValueError(
+                f"{str(destination)!r} already exists; pass overwrite=True (command line: --overwrite) to replace it"
+            )
     return summary_path
 
 
