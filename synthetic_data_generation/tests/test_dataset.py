@@ -264,6 +264,18 @@ def test_shuffle_permutes_rows_but_keeps_ids_with_their_diameters():
     assert len(shuffled.rows) == 7
 
 
+def test_recorded_entries_cannot_be_edited():
+    """Assigning into a recorded entry raises TypeError and leaves the recorded value as drawn."""
+    result = dataset.generate_dataset([gaussian("A", 2, 1.0, 1.0)], seed=1)
+    with pytest.raises(TypeError):
+        result.entries[0]["mean"] = 2.0
+    with pytest.raises(TypeError):
+        del result.entries[0]["N"]
+    assert result.entries[0]["mean"] == 1.0
+    assert result.entries[0]["N"] == 2
+    assert dict(result.entries[0]) == gaussian("A", 2, 1.0, 1.0)
+
+
 def test_counter_widens_past_five_digits():
     """One class of 100,000 particles ends at C1_o100000 with every id distinct."""
     result = dataset.generate_dataset([gaussian("A", 100000, 100.0, 1.0)], seed=2)
