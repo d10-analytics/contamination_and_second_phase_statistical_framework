@@ -65,8 +65,11 @@ def reject_generation_flags_with_summary(parser, args):
 def choose_output_path():
     """Ask the user where to save the CSV in a save dialog and return the chosen path."""
     # Imported here, and only here, so a run given --output never loads tkinter.
-    import tkinter
-    from tkinter import filedialog
+    try:
+        import tkinter
+        from tkinter import filedialog
+    except ImportError as error:
+        raise ValueError(f"the save dialog needs tkinter, which is not installed ({error}); pass --output instead")
 
     try:
         root = tkinter.Tk()
