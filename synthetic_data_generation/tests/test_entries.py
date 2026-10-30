@@ -102,6 +102,26 @@ def test_broken_array_reports_json_position_not_a_jsonl_line():
     assert "JSONL" not in message
 
 
+def test_text_after_a_complete_array_reports_json_position_not_a_jsonl_line():
+    """A stray bracket, comma or word after an indented array keeps JSON's own line and column."""
+    lines = []
+    for number in range(1, 14):
+        lines.append('  {"class": "C%d", "distribution": "gaussian", "N": 1, "mean": 1, "stdev": 1},' % number)
+    lines.append('  {"class": "C14", "distribution": "gaussian", "N": 1, "mean": 1, "stdev": 1}')
+    array_text = "[\n" + "\n".join(lines) + "\n]"
+    assert len(array_text.split("\n")) == 16
+    cases = [
+        (array_text + "\n]\n", "line 17, column 1"),
+        (array_text + ",\n", "line 16, column 2"),
+        (array_text + "\nx\n", "line 17, column 1"),
+    ]
+    for text, position in cases:
+        message = error_message(entries.parse_entries, text)
+        assert "invalid JSON" in message, text[-6:]
+        assert position in message, (text[-6:], message)
+        assert "JSONL" not in message, text[-6:]
+
+
 def test_top_level_value_empty_and_non_json_text_are_rejected():
     """Scalars, arrays of non-objects, empty arrays and empty text each get their own message."""
     cases = [
@@ -222,8 +242,8 @@ def test_class_must_be_a_clean_non_empty_string():
         ("A ", "must not start or end with whitespace"),
         ("A\tB", "must not contain a control character"),
         ("A\x00B", "must not contain a control character"),
-        ("A B", "must not contain a line or paragraph separator"),
-        ("A B", "must not contain a line or paragraph separator"),
+        ("A\u2028B", "must not contain a line or paragraph separator"),
+        ("A\u2029B", "must not contain a line or paragraph separator"),
         ("A\ud800B", "must not contain a lone surrogate"),
     ]
     for name, expected in cases:
