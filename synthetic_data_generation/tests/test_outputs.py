@@ -405,8 +405,10 @@ def test_existing_files_without_overwrite_keep_their_bytes(tmp_path):
         before = folder_listing(folder)
         with pytest.raises(ValueError, match="already exists"):
             outputs.check_destinations(folder / "run.csv")
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(ValueError, match="already exists") as caught:
             outputs.write_outputs(result, folder / "run.csv")
+        assert "--overwrite" in str(caught.value)
+        assert "overwrite=True" in str(caught.value)
         assert folder_listing(folder) == before
         assert (folder / existing).read_bytes() == b"old " + existing.encode()
 
