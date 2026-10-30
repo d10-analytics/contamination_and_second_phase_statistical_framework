@@ -1,11 +1,13 @@
 # This file draws the random particle sizes (equivalent diameters in micrometres)
 # for one entry. It builds the entry's distribution (Gaussian, gamma or GEV, the
 # generalised extreme value distribution) from SciPy, draws one size at a time
-# and keeps a size only when it is a finite number above zero and inside the
-# optional sieve window. A "sieve" is a pair of size limits (lower and upper,
-# both inclusive) that every entry shares. Drawing one size at a time keeps the
+# and accepts a size only when it is a finite number above zero and inside the
+# optional sieve window; any other draw is rejected and redrawn. A "sieve" is a pair of size limits (lower and upper,
+# both inclusive) that every entry shares. The window truncates each distribution
+# but never changes the count: every entry still yields exactly N sizes. Drawing
+# one size at a time keeps the
 # rule easy to read; speed is not a goal. If the window leaves almost no chance
-# of a kept size, the loop gives up after a fixed number of consecutive tries
+# of an accepted size, the loop gives up after a fixed number of consecutive tries
 # and raises SamplingError instead of running forever.
 
 import math
@@ -87,10 +89,10 @@ def draw_one_value(frozen_distribution, rng, lower, upper, max_attempts):
 
 
 def draw_entry_values(entry, rng, lower, upper, max_attempts, entry_number):
-    """Return exactly entry['N'] kept sizes as Python floats, drawn with the given random generator.
+    """Return exactly entry['N'] accepted sizes as Python floats, drawn with the given random generator.
 
     The attempt cap counts consecutive draws for one particle, so it restarts
-    after each kept value. Exhausting it raises SamplingError naming the entry.
+    after each accepted value. Exhausting it raises SamplingError naming the entry.
     """
     frozen_distribution = build_distribution(entry)
     values = []

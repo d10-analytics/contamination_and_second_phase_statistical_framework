@@ -56,11 +56,11 @@ class Row:
 
 @dataclass(frozen=True)
 class ClassCount:
-    """How many particles one class kept, with its label such as C1."""
+    """The count of one class: the N particles generated for it and written to the CSV, with its label such as C1."""
 
     label: str
     class_name: str
-    kept_count: int
+    count: int
 
 
 @dataclass(frozen=True)
@@ -152,7 +152,7 @@ def derive_checked_row(class_name, object_id, diameter, entry_number):
 
 
 def build_rows(checked_entries, entry_streams, lower, upper, max_attempts):
-    """Draw every entry and return (rows in entry order, per-class kept counts) with ids assigned."""
+    """Draw every entry and return (rows in entry order, per-class counts) with ids assigned."""
     class_numbers = {}
     particle_counters = {}
     rows = []

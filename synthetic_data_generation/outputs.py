@@ -152,10 +152,10 @@ def build_summary_text(result, csv_name, summary_name):
         f"Shuffle: {result.shuffle}",
         f"Library versions: python {versions['python']}, numpy {versions['numpy']}, scipy {versions['scipy']}",
         "",
-        "Particles kept per class:",
+        "Particles per class (the count N of each class, as written to the CSV):",
     ]
     for class_count in result.class_counts:
-        lines.append(f"{class_count.label}  {class_count.class_name}  {class_count.kept_count}")
+        lines.append(f"{class_count.label}  {class_count.class_name}  {class_count.count}")
     lines += [
         "",
         f"Measurements file: {csv_name!r}",

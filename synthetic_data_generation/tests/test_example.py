@@ -1,13 +1,14 @@
 # This file tests the runnable example and the step-by-step guide. The example
 # test runs the real script end to end in a temporary folder with no screen
-# available, then checks the files, the plot function on a hand-written CSV, and
-# that step 5 really goes through the shared replay function. The guide tests
+# available, then checks the files and that step 5 really goes through the
+# shared replay function. The guide tests
 # read the guide the way a newcomer would: following the link from the top-level
 # README, finding the numbered steps in order, checking every path it names, and
 # running its command-line line. Matplotlib is needed, so these tests belong to
 # the full lane only.
 
 import ast
+import csv
 import importlib.util
 import os
 import re
@@ -26,13 +27,6 @@ from synthetic_data_generation.example import run_example
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent.parent
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 EXPECTED_FILES = ["example_particles.csv", "example_particles_plot.png", "example_particles_summary.txt"]
-HAND_WRITTEN_CSV = (
-    "feature_label,object_id,contour_area_um2,equivalent_diameter_um,volume_um3\n"
-    "X,C1_o00001,1.0,10.0,500.0\n"
-    "X,C1_o00002,2.0,20.0,600.0\n"
-    "Y,C2_o00001,3.0,30.0,700.0\n"
-    "X,C1_o00003,4.0,40.0,800.0\n"
-)
 ALLOWED_MODULES = {"matplotlib", "synthetic_data_generation"}
 CLI_LINE_START = "python3 -m synthetic_data_generation "
 MARKER_TEXT = "replay marker"
@@ -64,7 +58,7 @@ def test_example_writes_exactly_three_files_and_reports_identical(tmp_path, caps
     assert plot_bytes.startswith(PNG_SIGNATURE)
     lines = printed_lines(capsys)
     assert lines[-1] == "identical: True"
-    assert "'matrix': 300" in lines[0]
+    assert lines[0] == "counts per class: {'corrosion pits': 300, 'oxide': 60, 'inclusion': 40}"
 
 
 def test_example_uses_its_fixed_seed_and_sieve_limits(tmp_path, monkeypatch):
@@ -78,10 +72,11 @@ def test_example_uses_its_fixed_seed_and_sieve_limits(tmp_path, monkeypatch):
     assert parameters.seed == run_example.SEED == 20261029
     assert parameters.threshold_lower == run_example.SIEVE_LOWER_UM == 10.0
     assert parameters.threshold_upper == run_example.SIEVE_UPPER_UM == 120.0
-    diameters_by_class = run_example.read_csv_back(first / "example_particles.csv")
-    for class_name, diameters in diameters_by_class.items():
-        for diameter in diameters:
-            assert 10.0 <= diameter <= 120.0, class_name
+    with open(first / "example_particles.csv", encoding="utf-8", newline="") as csv_file:
+        rows = list(csv.DictReader(csv_file))
+    assert len(rows) == 400
+    for row in rows:
+        assert 10.0 <= float(row["equivalent_diameter_um"]) <= 120.0, row["feature_label"]
     assert (first / "example_particles.csv").read_bytes() == (second / "example_particles.csv").read_bytes()
 
 
@@ -113,20 +108,11 @@ def test_example_can_run_twice_into_the_same_folder(tmp_path, capsys, monkeypatc
 
 
 def test_example_input_holds_three_classes_in_order():
-    """The bundled input file reads as gamma, gaussian, gev entries for three different classes."""
+    """The bundled input file reads as corrosion pits (gev), oxide (gaussian), inclusion (gev), three different classes."""
     entries = entries_module.read_entries(run_example.INPUT_PATH)
-    assert [entry["distribution"] for entry in entries] == ["gamma", "gaussian", "gev"]
+    assert [entry["distribution"] for entry in entries] == ["gev", "gaussian", "gev"]
+    assert [entry["class"] for entry in entries] == ["corrosion pits", "oxide", "inclusion"]
     assert len({entry["class"] for entry in entries}) == 3
-
-
-def test_plot_function_reads_the_csv_file_it_is_given(tmp_path, monkeypatch):
-    """Given only a hand-written CSV path, the plot function returns the counts in that file and saves a PNG beside it."""
-    hide_display(monkeypatch)
-    csv_path = tmp_path / "hand.csv"
-    csv_path.write_text(HAND_WRITTEN_CSV, encoding="utf-8")
-    counts = run_example.plot_csv(csv_path)
-    assert counts == {"X": 3, "Y": 1}
-    assert (tmp_path / "hand_plot.png").read_bytes().startswith(PNG_SIGNATURE)
 
 
 def test_step_five_prints_false_when_the_shared_replay_gives_another_dataset(tmp_path, capsys, monkeypatch):

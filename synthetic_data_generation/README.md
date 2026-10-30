@@ -43,7 +43,7 @@ From the repository folder, run:
 python3 -m synthetic_data_generation.example.run_example
 ```
 
-The script `synthetic_data_generation/example/run_example.py` does five numbered steps: it generates a dataset from `synthetic_data_generation/example/example_input.jsonl`, saves it, reads the CSV back, draws a plot, and then recreates the CSV from the summary and checks that the two are identical. The last line it prints is `identical: True`. It leaves three files in the folder `synthetic_data_generation/example/output/`, which is created if missing and is not tracked by git:
+The script `synthetic_data_generation/example/run_example.py` is written to be read top to bottom like a notebook, with commentary before each of its five numbered steps: it generates a dataset from `synthetic_data_generation/example/example_input.jsonl`, saves it, reads the CSV back, draws a plot, and then recreates the CSV from the summary and checks that the two are identical. The last line it prints is `identical: True`. It leaves three files in the folder `synthetic_data_generation/example/output/`, which is created if missing and is not tracked by git:
 
 - `synthetic_data_generation/example/output/example_particles.csv`: one row per particle, with the columns `feature_label` (the class name), `object_id`, `contour_area_um2`, `equivalent_diameter_um` and `volume_um3`.
 - `synthetic_data_generation/example/output/example_particles_summary.txt`: every setting used, and a block of reproduction parameters that lets the CSV be recreated.
@@ -57,10 +57,10 @@ Running the example again replaces these files. The example always uses the same
 
 - `class`: the name of the particle class, copied unchanged into the CSV column `feature_label`.
 - `distribution`: the kind of random draw: `gamma`, `gaussian` or `gev`.
-- `N`: how many particles to keep for this class.
+- `N`: the count for this class: exactly how many particles are generated for it and written to the CSV. Sieve limits never change this number; they only truncate the distribution the diameters are drawn from.
 - Gaussian: `mean` and `stdev` (spread). Gamma: `shape` and `scale`. GEV: `shape`, `loc` (location) and `scale`.
 
-The example has three entries, in this order: `matrix` (gamma), `oxide` (gaussian) and `inclusion` (gev). The sieve limits (the smallest and largest diameter kept) and the seed are set in `synthetic_data_generation/example/run_example.py`.
+The example has three entries, in this order: `corrosion pits` (gev), `oxide` (gaussian) and `inclusion` (gev). The sieve limits (the smallest and largest diameter allowed; a draw outside them is rejected and redrawn, so each class still has exactly `N` particles but follows its distribution truncated to that window) and the seed are set in `synthetic_data_generation/example/run_example.py`.
 
 ## 5. Open the plot
 
@@ -78,5 +78,5 @@ It writes `~/synthetic_particles.csv` and `~/synthetic_particles_summary.txt`. A
 
 ## Good to know
 
-- The tool tries each particle again until it falls inside the sieve limits. `max_attempts` (default 100,000) caps the tries per particle, so the worst case is N × `max_attempts` draws before the tool stops with an error. Impossible limits therefore fail after a long wait, not instantly.
+- The count of each class is always exactly its `N`. The tool redraws each particle until it falls inside the sieve limits, which truncates the distribution without reducing the count. `max_attempts` (default 100,000) caps the tries per particle, so the worst case is N × `max_attempts` draws before the tool stops with an error. Impossible limits therefore fail after a long wait, not instantly.
 - A failed run writes no output files. One small risk remains: the tool saves the CSV and then the summary, and if the computer fails exactly between those two moments, or the second save fails after the CSV replaced an old one (with `--overwrite`), the new CSV can sit beside the old summary. The error message says so when the tool notices.

@@ -107,7 +107,7 @@ def test_result_records_inputs_counts_and_source():
     assert from_list.threshold_upper == 1000.5
     assert from_list.seed == 3
     assert from_list.max_attempts == 50
-    counts = [(item.label, item.class_name, item.kept_count) for item in from_list.class_counts]
+    counts = [(item.label, item.class_name, item.count) for item in from_list.class_counts]
     assert counts == [("C1", "A", 5), ("C2", "B", 2)]
     assert len(from_list.entries) == 3
     from_text = dataset.generate_dataset(json.dumps(entries), seed=3)
@@ -345,7 +345,7 @@ def test_class_numbers_follow_first_appearance_not_name_order():
     result = dataset.generate_dataset(entry_list, seed=4)
     assert object_ids(result) == ["C1_o00001", "C1_o00002", "C2_o00001", "C1_o00003"]
     assert [row.feature_label for row in result.rows] == ["Z", "Z", "A", "Z"]
-    counts = [(item.label, item.class_name, item.kept_count) for item in result.class_counts]
+    counts = [(item.label, item.class_name, item.count) for item in result.class_counts]
     assert counts == [("C1", "Z", 3), ("C2", "A", 1)]
 
 
