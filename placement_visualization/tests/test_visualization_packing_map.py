@@ -84,9 +84,9 @@ def png_pixels(path):
     return numpy.round(imread(path) * 255).astype(numpy.uint8)
 
 
-def map_and_figure(base, sigma_um=None, **options):
+def map_and_figure(base, sigma_um=None):
     """Write the map and return (its pixels, a drawn figure built the same way from the saved files)."""
-    path = write_packing_map(base, sigma_um=sigma_um, long_side_px=PIXELS, **options)
+    path = write_packing_map(base, sigma_um=sigma_um, long_side_px=PIXELS, overwrite=True)
     result = saving.read_placement_outputs(base)
     sigma = sigma_um if sigma_um is not None else packing_map.default_sigma_um(result.rows)
     figure = packing_map.build_packing_map_figure(result, sigma, PIXELS)
