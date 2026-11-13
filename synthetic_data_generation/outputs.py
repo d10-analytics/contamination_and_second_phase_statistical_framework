@@ -396,10 +396,8 @@ def check_library_versions(versions):
     return versions
 
 
-def read_summary(path):
-    """Read a summary file and return its checked reproduction parameters as SummaryParameters."""
-    text = Path(path).read_text(encoding="utf-8")
-    block = load_block(text)
+def check_reproduction_parameters(block):
+    """Check a reproduction block (already loaded from JSON) and return its settings as SummaryParameters."""
     check_keys(block, PARAMETER_KEYS, "the summary's reproduction parameters")
     checked_entries = entries_module.validate_entries(block["entries"])
     lower, upper = sampling.validate_thresholds(block["threshold_lower"], block["threshold_upper"])
@@ -415,6 +413,24 @@ def read_summary(path):
         max_attempts=max_attempts,
         shuffle=shuffle,
         library_versions=versions,
+    )
+
+
+def read_summary(path):
+    """Read a summary file and return its checked reproduction parameters as SummaryParameters."""
+    text = Path(path).read_text(encoding="utf-8")
+    return check_reproduction_parameters(load_block(text))
+
+
+def generate_from_parameters(parameters):
+    """Generate the dataset that checked SummaryParameters describe."""
+    return dataset.generate_dataset(
+        parameters.entries,
+        threshold_lower=parameters.threshold_lower,
+        threshold_upper=parameters.threshold_upper,
+        seed=parameters.seed,
+        max_attempts=parameters.max_attempts,
+        shuffle=parameters.shuffle,
     )
 
 
@@ -434,14 +450,7 @@ def replay_summary(summary_path):
     """Recreate a run from its summary file and return the result, with the summary as its input source."""
     parameters = read_summary(summary_path)
     warn_about_versions(parameters.library_versions)
-    result = dataset.generate_dataset(
-        parameters.entries,
-        threshold_lower=parameters.threshold_lower,
-        threshold_upper=parameters.threshold_upper,
-        seed=parameters.seed,
-        max_attempts=parameters.max_attempts,
-        shuffle=parameters.shuffle,
-    )
+    result = generate_from_parameters(parameters)
     # An absolute path can never equal the plain words "text" or "list" that mark
     # entries given as text or as a list, even when the summary file is named so.
     return replace(result, input_source=str(Path(summary_path).resolve()))

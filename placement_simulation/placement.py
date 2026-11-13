@@ -283,18 +283,12 @@ def achieved_coverage(rows, slate):
     return total / geometry.slate_area(slate)
 
 
-def place_particles(particles, slate, *, mode="random", max_tries=1, buffer_um=0.0, pixel_um=1.0, order="as_given", seed=None):
-    """Place the particles on the slate and return a PlacementResult; nothing is written to disk.
+def place_records(records, identity, settings):
+    """Place already-read particle records and return a PlacementResult; nothing is written to disk.
 
-    particles is a generator DatasetResult or the path of a measurements CSV.
-    Every setting is checked before the requested coverage is printed on
-    stderr and before anything is placed. With no seed one is drawn and
-    recorded. Raises ValueError for a refused setting or input.
+    settings is the dictionary check_settings returns, with a seed drawn. The
+    requested coverage is printed on stderr before anything is placed.
     """
-    settings = check_settings(slate, mode, max_tries, buffer_um, pixel_um, order, seed)
-    records, identity = read_particles(particles)
-    if settings["seed"] is None:
-        settings["seed"] = secrets.randbits(dataset.SEED_BITS)
     requested = requested_coverage(records, settings["slate"])
     print(f"requested coverage: {requested!r} (total particle area / slate area)", file=sys.stderr)
     order_child, location_child = np.random.SeedSequence(settings["seed"]).spawn(2)
@@ -318,3 +312,18 @@ def place_particles(particles, slate, *, mode="random", max_tries=1, buffer_um=0
         achieved_coverage=achieved_coverage(rows, settings["slate"]),
         rows=tuple(rows),
     )
+
+
+def place_particles(particles, slate, *, mode="random", max_tries=1, buffer_um=0.0, pixel_um=1.0, order="as_given", seed=None):
+    """Place the particles on the slate and return a PlacementResult; nothing is written to disk.
+
+    particles is a generator DatasetResult or the path of a measurements CSV.
+    Every setting is checked before the requested coverage is printed on
+    stderr and before anything is placed. With no seed one is drawn and
+    recorded. Raises ValueError for a refused setting or input.
+    """
+    settings = check_settings(slate, mode, max_tries, buffer_um, pixel_um, order, seed)
+    records, identity = read_particles(particles)
+    if settings["seed"] is None:
+        settings["seed"] = secrets.randbits(dataset.SEED_BITS)
+    return place_records(records, identity, settings)
