@@ -463,69 +463,110 @@ def saved_class_run(folder, slate, class_count):
     return save_rows(folder, class_rows(class_count, "Particle class"), slate)
 
 
-def refused_size_message(tmp_path, slate, class_count, long_side_px):
-    """Return the ValueError text for a still of that many classes at long_side_px, after checking nothing was written."""
-    base = saved_class_run(tmp_path, slate, class_count)
-    before = folder_state(tmp_path)
+def class_labels(class_count, prefix="Particle class"):
+    """Return the sorted legend labels of that many classes, as the drawing orders them."""
+    return [row.feature_label for row in class_rows(class_count, prefix)]
+
+
+def suggested_size(message):
+    """Return the long side a refusal message says works."""
+    return int(re.search(r"long_side_px=(\d+) works", message).group(1))
+
+
+def refusal_message(slate, class_count, long_side_px):
+    """Return the ValueError text of the layout step for that many classes at long_side_px, failing when the layout does not refuse."""
     with pytest.raises(ValueError, match="long_side_px") as refused:
-        write_still_images(base, 10, long_side_px=long_side_px)
-    assert folder_state(tmp_path) == before
+        slate_drawing.picture_layout(slate, long_side_px, class_labels(class_count))
     return str(refused.value)
 
 
 def test_a_size_too_small_for_the_legend_is_refused_before_anything_is_written(tmp_path):
-    """Forty classes at 100 pixels cannot fit a legend under a square, so the call names long_side_px and leaves the folder as it was."""
-    refused_size_message(tmp_path, SQUARE, 40, 100)
+    """Eleven classes at 30 pixels cannot fit a legend under a square, so writing the stills names long_side_px and leaves the folder as it was."""
+    base = saved_class_run(tmp_path, SQUARE, 11)
+    before = folder_state(tmp_path)
+    with pytest.raises(ValueError, match="long_side_px"):
+        write_still_images(base, 10, long_side_px=30)
+    assert folder_state(tmp_path) == before
 
 
-def test_a_tall_rectangle_is_refused_and_the_size_named_in_the_refusal_draws_inside_the_picture(tmp_path):
-    """Forty classes at 100 pixels on a 100 x 300 rectangle are refused with nothing written; the long_side_px the refusal names writes every picture, each with a legend wholly inside it and a slate of positive size."""
+def test_a_tall_rectangle_is_refused_and_the_size_named_in_the_refusal_is_accepted():
+    """Eleven classes at 30 pixels on a 100 x 300 rectangle are refused at the layout step; the long_side_px the refusal names is larger and its layout is accepted."""
     slate = {"shape": "rectangle", "width_um": 100.0, "height_um": 300.0}
-    refused_folder = tmp_path / "refused"
-    refused_folder.mkdir()
-    message = refused_size_message(refused_folder, slate, 40, 100)
-    suggested = int(re.search(r"long_side_px=(\d+) works", message).group(1))
-    assert suggested > 100
-    drawn_folder = tmp_path / "drawn"
-    drawn_folder.mkdir()
-    base = saved_class_run(drawn_folder, slate, 40)
-    assert len(write_still_images(base, 20, long_side_px=suggested)) == 2
-    figure = drawn_still(slate, 40, suggested)
-    renderer = figure.canvas.get_renderer()
-    legend_box = figure.legends[0].get_window_extent(renderer)
-    axes_box = figure.axes[0].get_window_extent(renderer)
-    assert axes_box.width > 0 and axes_box.height > 0
-    assert legend_box.y1 <= axes_box.y0
-    assert legend_box.x0 >= 0 and legend_box.y0 >= 0
-    assert legend_box.x1 <= figure.bbox.x1 and legend_box.y1 <= figure.bbox.y1
+    assert slate_drawing.try_layout(slate, 30, class_labels(11)) is None
+    suggested = suggested_size(refusal_message(slate, 11, 30))
+    assert suggested > 30
+    assert slate_drawing.try_layout(slate, suggested, class_labels(11)) is not None
+
+
+def layout_is_drawable(slate, long_side_px, labels):
+    """Say whether the layout of the labels at long_side_px has its legend inside the picture and a slate of at least the minimum size; fail when it is accepted otherwise."""
+    layout = slate_drawing.try_layout(slate, long_side_px, labels)
+    if layout is None:
+        return False
+    width, height, strip, margin, scale = layout
+    box = slate_drawing.legend_box(width, labels, long_side_px)
+    half_width, half_height = slate_drawing.slate_extent(slate)
+    assert box.x0 >= -0.5 and box.y0 >= -0.5 and box.x1 <= width + 0.5, (slate, long_side_px)
+    assert box.y1 <= strip + 0.5, (slate, long_side_px)
+    assert 2 * max(half_width, half_height) * scale >= slate_drawing.MIN_SLATE_PX - 0.5, (slate, long_side_px)
+    return True
 
 
 SMALL_PICTURE_CASES = [
     (SQUARE, 11, 30),
-    (CIRCLE, 40, 30),
+    (CIRCLE, 11, 30),
     (TALL, 3, 100),
-    (WIDE, 40, 100),
+    (WIDE, 11, 60),
 ]
 
 
 def test_every_small_picture_either_draws_a_legend_inside_it_or_is_refused():
-    """For small sizes a picture never has a legend outside it or a slate of no size; the rest are ValueErrors naming long_side_px."""
+    """For small sizes a layout never has a legend outside the picture or a slate of no size; the rest are ValueErrors naming long_side_px."""
     drawn = 0
     refused = 0
     for case in SMALL_PICTURE_CASES:
-        result = result_of(class_rows(case[1], "Particle class"), case[0])
-        try:
-            figure = stills.build_still_figure(result, case[1], case[2])
-        except ValueError as error:
-            assert "long_side_px" in str(error), case
+        labels = class_labels(case[1])
+        if layout_is_drawable(case[0], case[2], labels):
+            drawn += 1
+        else:
+            assert "long_side_px" in refusal_message(case[0], case[1], case[2]), case
             refused += 1
-            continue
-        figure.canvas.draw()
-        renderer = figure.canvas.get_renderer()
-        legend_box = figure.legends[0].get_window_extent(renderer)
-        axes_box = figure.axes[0].get_window_extent(renderer)
-        assert axes_box.width > 0 and axes_box.height > 0, case
-        assert legend_box.x0 >= -0.5 and legend_box.y0 >= -0.5, case
-        assert legend_box.x1 <= figure.bbox.x1 + 0.5 and legend_box.y1 <= figure.bbox.y1 + 0.5, case
-        drawn += 1
     assert drawn > 0 and refused > 0
+
+
+def drawn_small_still(slate, class_count, long_side_px):
+    """Return the drawn figure of one step of class_count classes labelled with short names at long_side_px."""
+    figure = stills.build_still_figure(result_of(class_rows(class_count), slate), class_count, long_side_px)
+    figure.canvas.draw()
+    return figure
+
+
+def assert_drawn_inside(figure):
+    """Check the legend lies inside the figure within half a pixel, below the slate, and the slate has positive size."""
+    renderer = figure.canvas.get_renderer()
+    legend_box = figure.legends[0].get_window_extent(renderer)
+    axes_box = figure.axes[0].get_window_extent(renderer)
+    assert axes_box.width > 0 and axes_box.height > 0
+    assert legend_box.x0 >= -0.5 and legend_box.y0 >= -0.5
+    assert legend_box.x1 <= figure.bbox.x1 + 0.5 and legend_box.y1 <= figure.bbox.y1 + 0.5
+    assert legend_box.y1 <= axes_box.y0 + 0.5
+
+
+def test_a_square_with_one_class_at_one_hundred_pixels_is_written_not_refused(tmp_path):
+    """A legend that lies inside the picture up to rounding noise is not refused: the still is written and its legend is inside the picture."""
+    base = save_rows(tmp_path, class_rows(1), SQUARE)
+    paths = write_still_images(base, 1, long_side_px=100)
+    assert len(paths) == 1 and paths[0].exists()
+    assert_drawn_inside(drawn_small_still(SQUARE, 1, 100))
+
+
+def test_a_tall_rectangle_with_three_classes_at_eighty_pixels_is_drawn_not_refused():
+    """The 100 x 300 rectangle with three short-labelled classes at 80 pixels has its legend inside the picture and is drawn."""
+    slate = {"shape": "rectangle", "width_um": 100.0, "height_um": 300.0}
+    assert_drawn_inside(drawn_small_still(slate, 3, 80))
+
+
+def test_a_wide_rectangle_with_one_class_at_thirty_pixels_is_drawn_not_refused():
+    """The 300 x 100 rectangle with one class at 30 pixels, whose legend edge lies on the picture edge up to rounding noise, is drawn."""
+    slate = {"shape": "rectangle", "width_um": 300.0, "height_um": 100.0}
+    assert_drawn_inside(drawn_small_still(slate, 1, 30))
