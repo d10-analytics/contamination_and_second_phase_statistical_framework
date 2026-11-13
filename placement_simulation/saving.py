@@ -31,7 +31,8 @@ PLACEMENT_COLUMNS = (
     "edge_rejections",
     "overlap_rejections",
 )
-BLOCK_KEYS = ("slate", "mode", "max_tries", "buffer_um", "pixel_um", "order", "seed", "input")
+# The exact keys of the summary's settings block, in the order they are written.
+BLOCK_KEYS = ("slate", "mode", "max_tries", "buffer_um", "pixel_um", "order", "seed", "input", "library_versions")
 
 
 def format_float(value):
@@ -73,7 +74,7 @@ def describe_input(identity):
 
 def settings_block(result):
     """Return the dictionary the summary's settings block holds, library versions included."""
-    return {
+    values = {
         "slate": result.slate,
         "mode": result.mode,
         "max_tries": result.max_tries,
@@ -84,6 +85,10 @@ def settings_block(result):
         "input": result.input,
         "library_versions": outputs.current_library_versions(),
     }
+    block = {}
+    for key in BLOCK_KEYS:
+        block[key] = values[key]
+    return block
 
 
 def build_summary_text(result, placements_name, summary_name):
