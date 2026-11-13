@@ -13,7 +13,9 @@ REPOSITORY_ROOT = PACKAGE_FOLDER.parent
 
 EXPECTED_REQUIREMENTS = ["numpy>=2.2,<3", "scipy>=1.15,<2", "matplotlib>=3.9,<4"]
 GUIDE_LINK = "](synthetic_data_generation/README.md)"
+PLACEMENT_GUIDE_LINK = "](placement_simulation/README.md)"
 OUTPUT_IGNORE_LINE = "synthetic_data_generation/example/output/"
+PLACEMENT_OUTPUT_IGNORE_LINE = "placement_simulation/example/output/"
 BYTECODE_IGNORE_LINE = "__pycache__/"
 
 
@@ -46,7 +48,13 @@ def test_root_readme_links_to_the_package_guide():
     assert GUIDE_LINK in text
 
 
-def test_ignore_file_keeps_agents_line_and_adds_output_folder_and_bytecode():
-    """The ignore list keeps its AGENTS.md line and also ignores the example output folder and compiled Python files."""
+def test_root_readme_links_to_the_placement_guide():
+    """The top-level README must also link to the placement guide by its exact path."""
+    text = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+    assert PLACEMENT_GUIDE_LINK in text
+
+
+def test_ignore_file_keeps_agents_line_and_adds_both_output_folders_and_bytecode():
+    """The ignore list keeps its AGENTS.md line and also ignores both example output folders and compiled Python files."""
     lines = read_lines(REPOSITORY_ROOT / ".gitignore")
-    assert lines == ["AGENTS.md", OUTPUT_IGNORE_LINE, BYTECODE_IGNORE_LINE]
+    assert lines == ["AGENTS.md", OUTPUT_IGNORE_LINE, PLACEMENT_OUTPUT_IGNORE_LINE, BYTECODE_IGNORE_LINE]

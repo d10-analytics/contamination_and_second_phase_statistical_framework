@@ -288,3 +288,24 @@ def test_guide_explains_input_file_risk_and_worst_case():
     assert "cannot hold a comment" in guide_text
     assert "N × `max_attempts`" in guide_text
     assert "beside the old summary" in guide_text
+
+
+def test_step_three_reads_the_csv_through_the_shared_reader(tmp_path, monkeypatch):
+    """A reader that raises a marker error makes main fail with it, and the script imports no csv module."""
+    hide_display(monkeypatch)
+
+    def raising_reader(path):
+        """Raise the marker error instead of reading."""
+        raise ReplayMarkerError("reader marker")
+
+    monkeypatch.setattr(outputs, "read_measurements", raising_reader)
+    with pytest.raises(ReplayMarkerError, match="reader marker"):
+        run_example.main(tmp_path)
+    tree = ast.parse(Path(run_example.__file__).read_text(encoding="utf-8"))
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".")[0])
+    assert "csv" not in imported

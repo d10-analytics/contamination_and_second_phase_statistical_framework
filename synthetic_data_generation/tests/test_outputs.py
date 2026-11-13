@@ -580,3 +580,192 @@ def test_read_summary_refusals_match_generate_dataset_messages_exactly(tmp_path)
         with pytest.raises(ValueError) as refused:
             outputs.read_summary(summary_path)
         assert str(refused.value) == message_from_generate(entry_list, settings)
+
+
+HEADER = "feature_label,object_id,contour_area_um2,equivalent_diameter_um,volume_um3\n"
+
+
+def write_text(tmp_path, text, name="measurements.csv"):
+    """Write text to a file in tmp_path and return its path."""
+    path = tmp_path / name
+    path.write_text(text, encoding="utf-8", newline="")
+    return path
+
+
+def test_parse_measurements_returns_rows_in_file_order_with_three_keys():
+    """Each row has exactly the three keys, the diameter is a float and file order is kept."""
+    text = HEADER + "B,2,1.0,7.5,3.0\nA,1,2.0,12,4.0\n"
+    assert outputs.parse_measurements(text) == [
+        {"feature_label": "B", "object_id": "2", "equivalent_diameter_um": 7.5},
+        {"feature_label": "A", "object_id": "1", "equivalent_diameter_um": 12.0},
+    ]
+    assert isinstance(outputs.parse_measurements(text)[1]["equivalent_diameter_um"], float)
+
+
+def test_parse_measurements_ignores_extra_columns_and_column_order():
+    """Only the three columns are read, wherever they sit."""
+    text = "equivalent_diameter_um,extra,object_id,feature_label\n5.5,zz,7,cls\n"
+    assert outputs.parse_measurements(text) == [{"feature_label": "cls", "object_id": "7", "equivalent_diameter_um": 5.5}]
+
+
+def test_parse_measurements_header_only_gives_an_empty_list():
+    """A header and no rows give an empty list."""
+    assert outputs.parse_measurements(HEADER) == []
+
+
+def test_parse_measurements_refuses_a_missing_column_by_name():
+    """Dropping any one required column is refused with that column's name."""
+    required = ["feature_label", "object_id", "equivalent_diameter_um"]
+    for column in required:
+        names = [name for name in required if name != column]
+        text = ",".join(names) + "\n" + ",".join("1" for _ in names) + "\n"
+        with pytest.raises(ValueError, match=column):
+            outputs.parse_measurements(text)
+
+
+def test_parse_measurements_refuses_empty_text_naming_a_column():
+    """Empty text has no header, so a required column is reported missing."""
+    with pytest.raises(ValueError, match="feature_label"):
+        outputs.parse_measurements("")
+
+
+def test_parse_measurements_refuses_a_bad_diameter_naming_its_line():
+    """A diameter that is not finite and above 0 names the file line of its row (header is line 1)."""
+    for cell in ["abc", "nan", "inf", "-inf", "0", "-1.5", ""]:
+        text = HEADER + "A,1,1,5.0,1\n" + f"A,2,1,{cell},1\n"
+        with pytest.raises(ValueError) as refused:
+            outputs.parse_measurements(text)
+        assert str(refused.value).startswith("line 3:"), cell
+
+
+def test_parse_measurements_refuses_a_short_row_naming_its_line():
+    """A row with too few cells is refused with its line number."""
+    text = HEADER + "A,1,1,5.0,1\nA,2\n"
+    with pytest.raises(ValueError) as refused:
+        outputs.parse_measurements(text)
+    assert str(refused.value).startswith("line 3:")
+
+
+def test_read_measurements_reads_a_file(tmp_path):
+    """The file reader returns the parsed rows."""
+    path = write_text(tmp_path, HEADER + "A,1,1,5.0,1\n")
+    assert outputs.read_measurements(path) == [{"feature_label": "A", "object_id": "1", "equivalent_diameter_um": 5.0}]
+
+
+def test_read_measurements_refuses_a_missing_path_and_a_folder(tmp_path):
+    """A missing path and a folder are refused with a message naming the path."""
+    with pytest.raises(ValueError) as missing:
+        outputs.read_measurements(tmp_path / "nope.csv")
+    assert str(missing.value) == f"cannot read measurements: '{tmp_path / 'nope.csv'}' does not exist"
+    with pytest.raises(ValueError) as folder:
+        outputs.read_measurements(tmp_path)
+    assert str(folder.value) == f"cannot read measurements: '{tmp_path}' is a directory, not a file"
+
+
+def test_read_measurements_refuses_non_utf8_bytes(tmp_path):
+    """Bytes that are not UTF-8 are refused with a message naming the path."""
+    path = tmp_path / "bad.csv"
+    path.write_bytes(HEADER.encode("utf-8") + b"\xff\xfe,1,1,5,1\n")
+    with pytest.raises(ValueError) as refused:
+        outputs.read_measurements(path)
+    assert str(refused.value).startswith(f"cannot read measurements from '{path}' as UTF-8 text:")
+
+
+def test_read_measurements_prefixes_a_parse_refusal_with_the_path(tmp_path):
+    """A parse refusal from a file starts with the path and keeps the line number."""
+    path = write_text(tmp_path, HEADER + "A,1,1,-1.5,1\n")
+    with pytest.raises(ValueError) as refused:
+        outputs.read_measurements(path)
+    assert str(refused.value).startswith(f"{path}: line 2:")
+
+
+def test_load_measurements_returns_the_bytes_that_were_parsed(tmp_path):
+    """The shared step returns the file's exact bytes along with the rows parsed from them."""
+    path = write_text(tmp_path, HEADER + "A,1,1,5.0,1\n")
+    data, rows = outputs.load_measurements(path)
+    assert data == path.read_bytes()
+    assert rows == outputs.parse_measurements(data.decode("utf-8"))
+
+
+def test_read_measurements_round_trips_a_written_shuffled_file(tmp_path):
+    """Every label, id and diameter written by write_outputs reads back equal, including a comma-and-quote class name."""
+    result = make_result(shuffle=True)
+    csv_path = tmp_path / "out.csv"
+    outputs.write_outputs(result, csv_path)
+    rows = outputs.read_measurements(csv_path)
+    assert len(rows) == len(result.rows) > 0
+    assert any(row["feature_label"] == 'say "hi", ok' for row in rows)
+    for read_row, written in zip(rows, result.rows):
+        assert read_row["feature_label"] == written.feature_label
+        assert read_row["object_id"] == written.object_id
+        assert read_row["equivalent_diameter_um"] == float(written.equivalent_diameter_um)
+
+
+def test_measurement_readers_are_public_names():
+    """Both reader names import from the package."""
+    from synthetic_data_generation import parse_measurements, read_measurements
+
+    assert parse_measurements is outputs.parse_measurements
+    assert read_measurements is outputs.read_measurements
+
+
+def run_three_files_with_a_folder_third(tmp_path, existing_names):
+    """Try to write three files whose third destination is a folder; return (the error, the three paths).
+
+    The files named in existing_names get an old copy first. The folder makes
+    the third rename fail naturally, with nothing patched.
+    """
+    paths = {"a": tmp_path / "a.txt", "b": tmp_path / "b.txt", "c": tmp_path / "c.txt"}
+    paths["c"].mkdir()
+    for name in existing_names:
+        paths[name].write_bytes(b"old " + name.encode("ascii"))
+    planned = [
+        (paths["a"], "new a", "A"),
+        (paths["b"], "new b", "B"),
+        (paths["c"], "new c", "C"),
+    ]
+    with pytest.raises(OSError) as caught:
+        outputs.write_files_together(planned)
+    return caught.value, paths
+
+
+def test_write_files_together_names_every_replaced_file_when_a_later_rename_fails(tmp_path):
+    """With both earlier files existing, both are replaced and the error names both, in order."""
+    error, paths = run_three_files_with_a_folder_third(tmp_path, ["a", "b"])
+    expected_end = f"the A {str(paths['a'])!r} and the B {str(paths['b'])!r} were replaced and the C was not"
+    assert str(error).startswith(f"the C {str(paths['c'])!r} could not be written (")
+    assert str(error).endswith(expected_end)
+    assert isinstance(error.__cause__, OSError)
+    assert paths["a"].read_bytes() == b"new a"
+    assert paths["b"].read_bytes() == b"new b"
+    assert paths["c"].is_dir()
+    assert folder_listing(tmp_path) == ["a.txt", "b.txt", "c.txt"]
+
+
+def test_write_files_together_deletes_new_files_and_names_only_the_replaced_one(tmp_path):
+    """When only the first file existed, the new second file is deleted and only the first is named."""
+    error, paths = run_three_files_with_a_folder_third(tmp_path, ["a"])
+    assert str(error).endswith(f"the A {str(paths['a'])!r} was replaced and the C was not")
+    assert paths["a"].read_bytes() == b"new a"
+    assert not paths["b"].exists()
+    assert paths["c"].is_dir()
+    assert folder_listing(tmp_path) == ["a.txt", "c.txt"]
+
+
+def test_write_files_together_raises_the_original_error_when_nothing_was_replaced(tmp_path):
+    """With no earlier file existing, the new files are deleted and the original error is raised unchanged."""
+    error, paths = run_three_files_with_a_folder_third(tmp_path, [])
+    assert "could not be written" not in str(error)
+    assert folder_listing(tmp_path) == ["c.txt"]
+
+
+def test_check_paths_refuses_in_order_with_the_given_hint(tmp_path):
+    """The first path that is a folder, or exists without overwrite, is refused with the caller's hint."""
+    (tmp_path / "old.txt").write_bytes(b"old")
+    (tmp_path / "folder").mkdir()
+    with pytest.raises(ValueError) as caught:
+        outputs.check_paths([tmp_path / "new.txt", tmp_path / "old.txt", tmp_path / "folder"], False, "the flag")
+    assert str(caught.value) == f"{str(tmp_path / 'old.txt')!r} already exists; pass the flag to replace it"
+    with pytest.raises(ValueError, match="is a folder; choose a file name instead"):
+        outputs.check_paths([tmp_path / "folder", tmp_path / "old.txt"], True, "the flag")
+    outputs.check_paths([tmp_path / "new.txt", tmp_path / "old.txt"], True, "the flag")

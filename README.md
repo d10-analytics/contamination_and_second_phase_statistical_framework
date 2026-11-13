@@ -28,6 +28,10 @@ The hypothesis testing framework is designed for regulatory and quality control 
 
 A small, readable generator that produces example particle measurements for trying the framework lives in `synthetic_data_generation/`. See the [synthetic data guide](synthetic_data_generation/README.md) for how to install and run it.
 
+## Particle Placement
+
+A small simulator that places the particles of a size list, such as the generator's example CSV, on a slate without overlap, and saves and replays each run, lives in `placement_simulation/`. See the [placement guide](placement_simulation/README.md) for how to run it.
+
 ## License
 
 This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.

@@ -18,7 +18,6 @@
 #   python3 -m synthetic_data_generation.example.run_example
 # It requires no internet connection, no display and no interaction.
 
-import csv
 from pathlib import Path
 
 # "Agg" is a non-interactive matplotlib backend that renders figures straight to
@@ -112,16 +111,17 @@ def main(output_folder=DEFAULT_OUTPUT_FOLDER):
     # Step 3: read the CSV back from disk
     # ------------------------------------------------------------------
     # From this point only the saved file is used, not the in-memory result,
-    # because the CSV is all that a collaborator would receive. The diameters
-    # are collected into a dictionary mapping each class name to the list of its
-    # equivalent diameters (in micrometres).
+    # because the CSV is all that a collaborator would receive. read_measurements
+    # checks the file and returns one dictionary per particle, with its class
+    # name, its identifier and its equivalent diameter (in micrometres) as a
+    # number. The diameters are collected into a dictionary mapping each class
+    # name to the list of its equivalent diameters.
     diameters_by_class = {}
-    with open(csv_path, "r", encoding="utf-8", newline="") as csv_file:
-        for row in csv.DictReader(csv_file):
-            class_name = row["feature_label"]
-            if class_name not in diameters_by_class:
-                diameters_by_class[class_name] = []
-            diameters_by_class[class_name].append(float(row["equivalent_diameter_um"]))
+    for row in outputs.read_measurements(csv_path):
+        class_name = row["feature_label"]
+        if class_name not in diameters_by_class:
+            diameters_by_class[class_name] = []
+        diameters_by_class[class_name].append(row["equivalent_diameter_um"])
 
     # The count of each class, i.e. the number of its rows in the CSV. Because
     # sampling continues until each class has N diameters, these equal the N
