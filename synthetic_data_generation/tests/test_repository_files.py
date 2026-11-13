@@ -16,7 +16,8 @@ GUIDE_LINK = "](synthetic_data_generation/README.md)"
 PLACEMENT_GUIDE_LINK = "](placement_simulation/README.md)"
 OUTPUT_IGNORE_LINE = "synthetic_data_generation/example/output/"
 PLACEMENT_OUTPUT_IGNORE_LINE = "placement_simulation/example/output/"
-VISUALIZATION_OUTPUT_IGNORE_LINE = "placement_visualization/example/output/"
+VISUALIZATION_RANDOM_IGNORE_LINE = "placement_visualization/example/output_random/"
+VISUALIZATION_CENTRE_IGNORE_LINE = "placement_visualization/example/output_center/"
 BYTECODE_IGNORE_LINE = "__pycache__/"
 
 
@@ -55,13 +56,14 @@ def test_root_readme_links_to_the_placement_guide():
     assert PLACEMENT_GUIDE_LINK in text
 
 
-def test_ignore_file_keeps_agents_line_and_adds_the_three_output_folders_and_bytecode():
-    """The ignore list keeps its AGENTS.md line and also ignores the three example output folders and compiled Python files."""
+def test_ignore_file_keeps_agents_line_and_adds_the_four_output_folders_and_bytecode():
+    """The ignore list keeps its AGENTS.md line and also ignores the four example output folders (the drawing example has one per placement mode) and compiled Python files."""
     lines = read_lines(REPOSITORY_ROOT / ".gitignore")
     assert lines == [
         "AGENTS.md",
         OUTPUT_IGNORE_LINE,
         PLACEMENT_OUTPUT_IGNORE_LINE,
-        VISUALIZATION_OUTPUT_IGNORE_LINE,
+        VISUALIZATION_RANDOM_IGNORE_LINE,
+        VISUALIZATION_CENTRE_IGNORE_LINE,
         BYTECODE_IGNORE_LINE,
     ]
