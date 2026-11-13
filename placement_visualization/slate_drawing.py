@@ -23,6 +23,12 @@ LEGEND_MAX_FONT_POINTS = 10.0
 LEGEND_MIN_FONT_POINTS = 1.0
 LEGEND_FONT_MARGIN_POINTS = 0.1
 MIN_SLATE_PX = 10
+# Pixel boxes measured by matplotlib carry rounding noise, so a legend that lies
+# inside the picture can measure a tiny fraction of a pixel outside it; every
+# inside check allows this much. ROUNDING_PX absorbs noise in comparisons of two
+# lengths that should be equal.
+PIXEL_TOLERANCE_PX = 0.5
+ROUNDING_PX = 1e-6
 BACKGROUND = "white"
 OUTLINE_COLOUR = "black"
 
@@ -59,7 +65,7 @@ def add_legend_columns(figure, handles, size):
         columns = (low + high + 1) // 2
         legend = figure.legend(handles=handles, loc="lower center", ncol=columns, frameon=False, fontsize=size)
         box = legend.get_window_extent(renderer)
-        fits = box.x0 >= 0 and box.x1 <= width_px
+        fits = fits_width(box, width_px)
         if low >= high:
             return legend, box
         legend.remove()
@@ -83,9 +89,9 @@ def add_fitted_legend(figure, handles, max_height_px=None):
     while True:
         legend, box = add_legend_columns(figure, handles, size)
         ratio = 1.0
-        if box.x0 < 0 or box.x1 > width_px:
+        if not fits_width(box, width_px):
             ratio = min(ratio, width_px / box.width)
-        if max_height_px is not None and box.y1 > max_height_px:
+        if max_height_px is not None and box.y1 > max_height_px + ROUNDING_PX:
             ratio = min(ratio, max_height_px / box.y1)
         if ratio >= 1.0 or size <= LEGEND_MIN_FONT_POINTS:
             return legend
@@ -93,9 +99,14 @@ def add_fitted_legend(figure, handles, max_height_px=None):
         size = max(LEGEND_MIN_FONT_POINTS, math.floor(size * ratio * 10.0) / 10.0 - LEGEND_FONT_MARGIN_POINTS)
 
 
+def fits_width(box, width_px):
+    """Say whether a legend's pixel box lies within the width, up to PIXEL_TOLERANCE_PX."""
+    return box.x0 >= -PIXEL_TOLERANCE_PX and box.x1 <= width_px + PIXEL_TOLERANCE_PX
+
+
 def legend_inside(box, width_px):
-    """Say whether a legend's pixel box lies within the picture width, starting at the picture bottom."""
-    return box.x0 >= 0 and box.x1 <= width_px and box.y0 >= 0
+    """Say whether a legend's pixel box lies within the picture width, starting at the picture bottom, up to PIXEL_TOLERANCE_PX."""
+    return fits_width(box, width_px) and box.y0 >= -PIXEL_TOLERANCE_PX
 
 
 def legend_box(width_px, labels, long_side_px):
@@ -122,11 +133,11 @@ def try_layout(slate, long_side_px, labels=None):
         if not legend_inside(box, box_width):
             return None
         width, height, scale = fit_picture(half_width, half_height, long_side_px, margin, strip)
-        if 2 * max(half_width, half_height) * scale < MIN_SLATE_PX:
+        if 2 * max(half_width, half_height) * scale < MIN_SLATE_PX - ROUNDING_PX:
             return None
         box = legend_box(width, labels, long_side_px)
         box_width = width
-        if legend_inside(box, width) and box.y1 <= strip:
+        if legend_inside(box, width) and box.y1 <= strip + ROUNDING_PX:
             return width, height, strip, margin, scale
         strip = box.y1
 
