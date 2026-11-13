@@ -64,7 +64,7 @@ def test_check_slate_refuses_missing_and_extra_keys():
 
 def test_check_slate_refuses_bad_dimensions():
     """A boolean, a text, a missing number, a non-finite value, zero and a negative are refused."""
-    bad_values = [True, "5", None, float("nan"), float("inf"), 0, 0.0, -3.0]
+    bad_values = [True, "5", None, float("nan"), float("inf"), 10**400, -10**400, 0, 0.0, -3.0]
     for value in bad_values:
         message = refusal_message({"shape": "rectangle", "width_um": 4.0, "height_um": value})
         assert "rectangle" in message and "height_um" in message, repr(value)
