@@ -175,13 +175,13 @@ def describe_entry_line(entry_number, label, entry):
     return "  ".join(parts)
 
 
-def build_reproduction_block(result):
-    """Return the lines from the begin marker to the end marker, holding the settings as JSON."""
+def reproduction_parameters(result):
+    """Return the settings dictionary that the reproduction block holds, library versions included."""
     plain_entries = []
     for entry in result.entries:
         # Entries on a result are read-only views; json needs ordinary dictionaries.
         plain_entries.append(dict(entry))
-    parameters = {
+    return {
         "entries": plain_entries,
         "threshold_lower": result.threshold_lower,
         "threshold_upper": result.threshold_upper,
@@ -190,7 +190,11 @@ def build_reproduction_block(result):
         "shuffle": result.shuffle,
         "library_versions": current_library_versions(),
     }
-    return [BEGIN_MARKER, json.dumps(parameters, indent=2), END_MARKER]
+
+
+def build_reproduction_block(result):
+    """Return the lines from the begin marker to the end marker, holding the settings as JSON."""
+    return [BEGIN_MARKER, json.dumps(reproduction_parameters(result), indent=2), END_MARKER]
 
 
 def build_summary_text(result, csv_name, summary_name):
