@@ -7,6 +7,8 @@
 import numbers
 import os
 
+from matplotlib import image
+
 from placement_simulation import saving
 from synthetic_data_generation import outputs
 
@@ -36,6 +38,16 @@ def write_figure_png(figure, destination):
     temporary = outputs.temporary_path_for(destination)
     try:
         figure.savefig(temporary, format="png")
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def write_image_png(pixels, destination):
+    """Write an RGBA pixel array as a PNG to a temporary file beside destination, then rename it into place; the temporary file is always removed."""
+    temporary = outputs.temporary_path_for(destination)
+    try:
+        image.imsave(temporary, pixels, format="png")
         os.replace(temporary, destination)
     finally:
         temporary.unlink(missing_ok=True)

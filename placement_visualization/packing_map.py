@@ -7,7 +7,12 @@
 # placement used. The covered cells are blurred with a Gaussian and divided by
 # the same blur of the slate cells, so a cell near the slate edge is not read
 # too low. The result is shown from 0 to 100 percent with a colour bar, and
-# cells off the slate are left uncoloured.
+# cells off the slate are left uncoloured. Two lines under the slate give the
+# sigma used and the global average packing factor: the true area of the
+# placed particles over the slate area, the run's achieved coverage, which the
+# blur does not change. write_packing_map_series draws the same map at several
+# sigmas, one PNG each, and joins them into one grid picture, so the effect of
+# the blur width can be compared side by side.
 
 from pathlib import Path
 
@@ -18,8 +23,9 @@ from placement_simulation import geometry, placement
 from placement_visualization import picture_files, slate_drawing
 
 SUFFIX = "_packing_map.png"
-SIGMA_FACTOR = 2.0
-COLOUR_MAP = "viridis"
+SERIES_SUFFIX = "_packing_map_sigma_series.png"
+SERIES_COLUMNS = 3
+COLOUR_MAP = "inferno"
 COLUMN_FRACTION = 0.22
 BAR_START_IN_COLUMN = 0.08
 BAR_WIDTH_IN_COLUMN = 0.2
@@ -36,9 +42,19 @@ def map_path(base_path):
     return base_path.parent / (base_path.name + SUFFIX)
 
 
+def series_map_path(base_path, sigma_um):
+    """Return the destination <base>_packing_map_sigma_<sigma to one decimal>.png beside base_path."""
+    return base_path.parent / f"{base_path.name}_packing_map_sigma_{sigma_um:.1f}.png"
+
+
+def series_grid_path(base_path):
+    """Return the destination <base>_packing_map_sigma_series.png beside base_path."""
+    return base_path.parent / (base_path.name + SERIES_SUFFIX)
+
+
 def default_sigma_um(rows):
-    """Return twice the largest diameter of all particles in the file, placed or not."""
-    return SIGMA_FACTOR * max(row.equivalent_diameter_um for row in rows)
+    """Return the median diameter of all particles in the file, placed or not."""
+    return float(np.median([row.equivalent_diameter_um for row in rows]))
 
 
 def cell_grid(slate, long_side_px):
@@ -95,18 +111,28 @@ def covered_percentage(result, sigma_um, long_side_px):
     return np.ma.masked_array(percentage, mask=~on_slate), cell
 
 
-def add_sigma_text(figure, sigma_um):
-    """Add the sigma text in the strip under the slate, shrunk until it lies wholly inside the figure at any size."""
+def caption_lines(sigma_um, packing_factor):
+    """Return the two caption lines: the sigma and the global average packing factor in percent, each to one decimal place."""
+    return [f"blur sigma {sigma_um:.1f} um", f"global average packing factor {100.0 * packing_factor:.1f} %"]
+
+
+def add_caption(figure, lines):
+    """Add the caption lines, one per row of the strip under the slate, top line first, at one font size shrunk until every line lies wholly inside the figure at any size."""
     width_px = figure.get_figwidth() * figure.dpi
     height_px = figure.get_figheight() * figure.dpi
-    strip_px = min(slate_drawing.LEGEND_ROW_PX, slate_drawing.LEGEND_MAX_FRACTION * max(width_px, height_px))
-    size = TEXT_FILL * strip_px * 72.0 / figure.dpi
-    text = figure.text(0.5, strip_px / 2.0 / height_px, f"blur sigma {sigma_um:g} um", ha="center", va="center", fontsize=size)
+    strip_px = slate_drawing.text_strip_px(max(width_px, height_px), len(lines))
+    row_px = strip_px / len(lines)
+    size = TEXT_FILL * row_px * 72.0 / figure.dpi
+    texts = []
+    for position, line in enumerate(lines):
+        centre_px = strip_px - (position + 0.5) * row_px
+        texts.append(figure.text(0.5, centre_px / height_px, line, ha="center", va="center", fontsize=size))
     renderer = figure.canvas.get_renderer()
-    while size > MIN_FONT_POINTS and text.get_window_extent(renderer).width > TEXT_WIDTH_FRACTION * width_px:
+    while size > MIN_FONT_POINTS and max(text.get_window_extent(renderer).width for text in texts) > TEXT_WIDTH_FRACTION * width_px:
         size -= FONT_STEP_POINTS
-        text.set_fontsize(size)
-    return text
+        for text in texts:
+            text.set_fontsize(size)
+    return texts
 
 
 def inside_figure(box, figure):
@@ -137,9 +163,10 @@ def add_colour_bar(figure, axes, image):
 
 
 def build_packing_map_figure(result, sigma_um, long_side_px):
-    """Return the figure: the slate's percentage map on a fixed 0-100 scale with a colour bar and the sigma used printed under the slate."""
+    """Return the figure: the slate's percentage map on a fixed 0-100 scale with a colour bar, and the sigma used and the global average packing factor printed under the slate."""
     percentage, cell = covered_percentage(result, sigma_um, long_side_px)
-    figure, axes = slate_drawing.make_slate_figure(result.slate, long_side_px)
+    lines = caption_lines(sigma_um, result.achieved_coverage)
+    figure, axes = slate_drawing.make_slate_figure(result.slate, long_side_px, len(lines))
     half_width, half_height = slate_drawing.slate_extent(result.slate)
     columns = percentage.shape[1]
     rows = percentage.shape[0]
@@ -149,15 +176,15 @@ def build_packing_map_figure(result, sigma_um, long_side_px):
     axes.set_ylim(-half_height, half_height)
     slate_drawing.draw_outline(axes, result.slate)
     add_colour_bar(figure, axes, image)
-    add_sigma_text(figure, sigma_um)
+    add_caption(figure, lines)
     return figure
 
 
 def write_packing_map(base_path, *, sigma_um=None, long_side_px=2000, overwrite=False):
     """Write <base>_packing_map.png and return its path.
 
-    sigma_um is the blur width in micrometres and defaults to twice the largest
-    diameter of all particles in the file. Arguments, the saved files and the
+    sigma_um is the blur width in micrometres and defaults to the median
+    diameter of all particles in the file, placed or not. Arguments, the saved files and the
     destination are checked before anything is drawn; each refusal is a
     ValueError, and a failure while writing leaves no cut-off or temporary file.
     """
@@ -172,3 +199,57 @@ def write_packing_map(base_path, *, sigma_um=None, long_side_px=2000, overwrite=
     figure = build_packing_map_figure(result, sigma_um, long_side_px)
     picture_files.write_figure_png(figure, destination)
     return destination
+
+
+def figure_pixels(figure):
+    """Return the drawn figure as an RGBA array of whole pixels."""
+    figure.canvas.draw()
+    return np.asarray(figure.canvas.buffer_rgba()).copy()
+
+
+def grid_of(pictures, columns):
+    """Return one RGBA array holding the pictures in rows of columns, left to right and top to bottom, every cell as large as the largest picture and empty cells white."""
+    cell_height = max(picture.shape[0] for picture in pictures)
+    cell_width = max(picture.shape[1] for picture in pictures)
+    rows = -(-len(pictures) // columns)
+    grid = np.full((rows * cell_height, columns * cell_width, 4), 255, dtype=np.uint8)
+    for position, picture in enumerate(pictures):
+        top = (position // columns) * cell_height
+        left = (position % columns) * cell_width
+        grid[top : top + picture.shape[0], left : left + picture.shape[1]] = picture
+    return grid
+
+
+def write_packing_map_series(base_path, sigmas_um, *, long_side_px=2000, overwrite=False):
+    """Write one packing map per sigma and a grid of them all; return (the map paths in sigma order, the grid path).
+
+    sigmas_um lists the blur widths in micrometres; an entry of None is the
+    default, the median diameter of all particles. Each map is
+    <base>_packing_map_sigma_<sigma>.png, the sigma to one decimal place, drawn
+    exactly as write_packing_map draws it, and the grid
+    <base>_packing_map_sigma_series.png holds them in rows of three in the order
+    given. An empty list, or two sigmas that name the same file, is refused.
+    Arguments, the saved files and every destination are checked before
+    anything is drawn; each refusal is a ValueError.
+    """
+    sigmas_um = list(sigmas_um)
+    if len(sigmas_um) == 0:
+        raise ValueError("sigmas_um must list at least one sigma")
+    checked = [None if sigma is None else placement.check_number("sigma_um", sigma, False) for sigma in sigmas_um]
+    long_side_px = picture_files.check_whole_number(long_side_px, "long_side_px")
+    base_path = Path(base_path)
+    result = picture_files.load_placement_result(base_path)
+    default = default_sigma_um(result.rows)
+    sigmas = [default if sigma is None else sigma for sigma in checked]
+    paths = [series_map_path(base_path, sigma) for sigma in sigmas]
+    if len(set(paths)) != len(paths):
+        raise ValueError(f"sigmas_um {sigmas_um!r} name the same file twice after rounding to one decimal place")
+    grid_path = series_grid_path(base_path)
+    picture_files.check_destinations(paths + [grid_path], overwrite)
+    pictures = []
+    for sigma, path in zip(sigmas, paths):
+        figure = build_packing_map_figure(result, sigma, long_side_px)
+        picture_files.write_figure_png(figure, path)
+        pictures.append(figure_pixels(figure))
+    picture_files.write_image_png(grid_of(pictures, SERIES_COLUMNS), grid_path)
+    return paths, grid_path

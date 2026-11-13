@@ -132,11 +132,16 @@ def slate_axes(figure, slate, left_px, bottom_px, scale, width_px, height_px):
     return axes
 
 
-def make_slate_figure(slate, long_side_px):
-    """Return (a Figure whose PNG long side is long_side_px, its one axes showing exactly the slate), with a margin and one text row under the slate."""
+def text_strip_px(long_side_px, text_rows):
+    """Return the height in pixels of the strip under the slate for text_rows rows of text, never more than LEGEND_MAX_FRACTION of the long side."""
+    return min(text_rows * LEGEND_ROW_PX, LEGEND_MAX_FRACTION * long_side_px)
+
+
+def make_slate_figure(slate, long_side_px, text_rows=1):
+    """Return (a Figure whose PNG long side is long_side_px, its one axes showing exactly the slate), with a margin and text_rows text rows under the slate."""
     half_width, half_height = slate_extent(slate)
     margin = MARGIN_FRACTION * long_side_px
-    strip = min(LEGEND_ROW_PX, LEGEND_MAX_FRACTION * long_side_px)
+    strip = text_strip_px(long_side_px, text_rows)
     width, height, scale = fit_picture(half_width, half_height, long_side_px, margin, strip)
     figure = new_figure(width, height)
     return figure, slate_axes(figure, slate, margin, margin + strip, scale, width, height)
@@ -178,19 +183,19 @@ def make_slate_figure_with_legend(slate, long_side_px, colours):
     return figure, slate_axes(figure, slate, (width - slate_width) / 2.0, 2 * margin + box.height, scale, full_width, full_height)
 
 
-def draw_outline(axes, slate):
-    """Draw the slate outline on the axes."""
+def draw_outline(axes, slate, linewidth=1.0):
+    """Draw the slate outline on the axes, linewidth points wide."""
     half_width, half_height = slate_extent(slate)
     if slate["shape"] == "circle":
-        outline = Circle((0.0, 0.0), half_width, fill=False, edgecolor=OUTLINE_COLOUR, linewidth=1.0)
+        outline = Circle((0.0, 0.0), half_width, fill=False, edgecolor=OUTLINE_COLOUR, linewidth=linewidth)
     else:
-        outline = Rectangle((-half_width, -half_height), 2 * half_width, 2 * half_height, fill=False, edgecolor=OUTLINE_COLOUR, linewidth=1.0)
+        outline = Rectangle((-half_width, -half_height), 2 * half_width, 2 * half_height, fill=False, edgecolor=OUTLINE_COLOUR, linewidth=linewidth)
     axes.add_patch(outline)
 
 
-def draw_slate(axes, slate, rows, colours):
-    """Draw the slate outline and, as true-size circles, every placed row in rows coloured by its class."""
-    draw_outline(axes, slate)
+def draw_slate(axes, slate, rows, colours, outline_width=1.0):
+    """Draw the slate outline, outline_width points wide, and, as true-size circles, every placed row in rows coloured by its class."""
+    draw_outline(axes, slate, outline_width)
     placed = [row for row in rows if row.placed]
     if len(placed) == 0:
         return
