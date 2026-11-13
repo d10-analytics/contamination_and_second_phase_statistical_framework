@@ -1,6 +1,6 @@
 # This file repeats a saved placement run from its summary. It reads the
-# summary's settings block, checks every key and every setting with the same
-# functions that a fresh run and the generator's own replay use, and then
+# summary's settings block, checking every key and every setting with the one
+# summary check in the saving module (which the placements reader shares), and then
 # gets the particle sizes again: from the measurements CSV, whose bytes must
 # hash to the recorded checksum, or by regenerating the generator result from
 # its recorded settings, whose CSV text must hash to the recorded checksum.
@@ -74,11 +74,7 @@ def replay_placement(summary_path, measurements_path=None):
     name beside the summary. Every refusal is a ValueError raised before any
     particle is placed.
     """
-    block = outputs.load_block(Path(summary_path).read_text(encoding="utf-8"))
-    outputs.check_keys(block, saving.BLOCK_KEYS, "the summary's settings")
-    settings = placement.check_settings(
-        block["slate"], block["mode"], block["max_tries"], block["buffer_um"], block["pixel_um"], block["order"], block["seed"]
-    )
+    block, settings = saving.read_summary_settings(summary_path)
     if settings["seed"] is None:
         raise ValueError("the summary's seed must be a whole number, not null")
     kind = check_input_block(block["input"])
