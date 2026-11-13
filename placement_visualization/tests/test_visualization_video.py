@@ -6,11 +6,13 @@
 # lookup is checked in a temporary folder for the interpreter-first, path-only
 # and neither cases, and through write_video with the interpreter and PATH
 # pointed at empty folders. A fake ffmpeg script, written beside a temporary
-# interpreter path, records its arguments and the bytes sent to it, which
-# proves the rates and options, that each shown step is sent once as a
-# 1920 x 1080 RGBA frame, the stderr line, which layout reaches the slate
-# drawing and the dashboard figure, and that a failing ffmpeg leaves an earlier
-# video untouched and no temporary file. The real encode is in the encoding file.
+# interpreter path, records its arguments, the bytes sent to it and the runs of
+# identical 1920 x 1080 RGBA frames, which proves the rates and options, that
+# each shown step is drawn once and sent for its held frames (the holds adding
+# up to the reported frame count), the stderr line, which layout reaches the
+# slate drawing and the dashboard figure, and that a failing ffmpeg leaves an
+# earlier video untouched and no temporary file. The real encode is in the
+# encoding file.
 
 import json
 import math
@@ -34,9 +36,22 @@ FAKE_RECORDING = """#!{python}
 import json
 import sys
 
-data = sys.stdin.buffer.read()
+frame_size = {frame_bytes}
+total = 0
+runs = []
+previous = None
+while True:
+    frame = sys.stdin.buffer.read(frame_size)
+    if not frame:
+        break
+    total += len(frame)
+    if frame == previous:
+        runs[-1] += 1
+    else:
+        runs.append(1)
+    previous = frame
 with open({record!r}, "w") as handle:
-    json.dump({{"args": sys.argv[1:], "stdin_bytes": len(data)}}, handle)
+    json.dump({{"args": sys.argv[1:], "stdin_bytes": total, "runs": runs}}, handle)
 with open(sys.argv[-1], "wb") as handle:
     handle.write(b"fake video bytes")
 """
@@ -125,7 +140,7 @@ def install_fake_ffmpeg(tmp_path, monkeypatch, template):
     empty.mkdir()
     record = tmp_path / "record.json"
     script = fake_bin / "ffmpeg"
-    script.write_text(template.format(python=REAL_PYTHON, record=str(record)), encoding="utf-8")
+    script.write_text(template.format(python=REAL_PYTHON, record=str(record), frame_bytes=FRAME_BYTES), encoding="utf-8")
     script.chmod(script.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setattr(sys, "executable", str(fake_bin / "python"))
     monkeypatch.setenv("PATH", str(empty))
@@ -188,11 +203,26 @@ def test_a_schedule_with_exactly_one_frame_per_step_is_accepted(tmp_path, monkey
 
 
 def test_the_frame_count_rounds_a_half_up():
-    """A half frame rounds up, as ffmpeg does, where Python's round goes to the even number."""
+    """A half frame rounds up, where Python's round goes to the even number."""
     assert video.frame_count(1.3, 25) == 33
     assert video.frame_count(2.35, 30) == 71
     assert video.frame_count(1.37, 30) == 41
     assert video.frame_count(0.1, 30) == 3
+
+
+def test_the_holds_add_up_to_the_frame_count_and_differ_by_at_most_one():
+    """Each step gets floor or ceiling of frames / steps, the k-th step ending at frame floor(k x frames / steps), and the holds add up to every frame."""
+    assert video.frame_holds(3, 20) == [6, 7, 7]
+    assert video.frame_holds(5, 33) == [6, 7, 6, 7, 7]
+    assert video.frame_holds(3, 8) == [2, 3, 3]
+    assert video.frame_holds(29, 29) == [1] * 29
+    for steps in range(1, 12):
+        for frames in range(steps, 40):
+            holds = video.frame_holds(steps, frames)
+            assert len(holds) == steps
+            assert sum(holds) == frames
+            assert min(holds) >= 1
+            assert max(holds) - min(holds) <= 1
 
 
 def test_the_shown_steps_marker_is_reached_before_the_ffmpeg_lookup(tmp_path, monkeypatch):
@@ -313,10 +343,19 @@ def test_an_existing_output_is_refused_without_overwrite(tmp_path, monkeypatch):
         write_video(base, 2, 1.0)
 
 
-def test_the_fake_ffmpeg_receives_the_rates_options_and_one_frame_per_shown_step(tmp_path, monkeypatch):
-    """Arguments carry the input rate, codec, bitrate, pixel format, output rate and mp4; stdin holds exactly the shown steps of RGBA 1920 x 1080."""
+def test_the_fake_ffmpeg_receives_the_rate_options_and_each_step_for_its_held_frames(tmp_path, monkeypatch):
+    """Arguments carry the frame rate, codec, bitrate, pixel format and mp4; stdin holds the 20 frames of RGBA 1920 x 1080, each shown step drawn once and held for 6, 7 and 7 frames."""
     base, folder = run_folder(tmp_path, 7)
     record = install_fake_ffmpeg(tmp_path, monkeypatch, FAKE_RECORDING)
+    drawn = []
+    original = video.build_slate_frame
+
+    def counting(result, step):
+        """Record the drawn step and draw it."""
+        drawn.append(step)
+        return original(result, step)
+
+    monkeypatch.setattr(video, "build_slate_frame", counting)
     path = write_video(base, 3, 2.0, fps=10)
     assert path == folder / "run_slate.mp4"
     assert path.read_bytes() == b"fake video bytes"
@@ -326,7 +365,7 @@ def test_the_fake_ffmpeg_receives_the_rates_options_and_one_frame_per_shown_step
     assert shown == 3
     input_position = args.index("pipe:")
     assert args[input_position - 1] == "-i"
-    assert args[args.index("-framerate") + 1] == str(shown / 2.0)
+    assert args[args.index("-framerate") + 1] == "10"
     assert args.index("-framerate") < input_position
     assert args[args.index("-s") + 1] == "1920x1080"
     assert args[args.index("-pix_fmt") + 1] == "rgba"
@@ -334,9 +373,11 @@ def test_the_fake_ffmpeg_receives_the_rates_options_and_one_frame_per_shown_step
     assert after[after.index("-vcodec") + 1] == "libopenh264"
     assert after[after.index("-b") + 1] == "8000k"
     assert after[after.index("-pix_fmt") + 1] == "yuv420p"
-    assert after[after.index("-r") + 1] == "10"
+    assert "-r" not in after
     assert after[after.index("-f") + 1] == "mp4"
-    assert recorded["stdin_bytes"] == shown * FRAME_BYTES
+    assert drawn == [3, 6, 7]
+    assert recorded["runs"] == [6, 7, 7]
+    assert recorded["stdin_bytes"] == 20 * FRAME_BYTES
     temporary_name = os.path.basename(args[-1])
     assert temporary_name.startswith(".run_slate.mp4.") and temporary_name.endswith(".tmp")
     assert sorted(entry.name for entry in folder.iterdir()) == ["run_placements.csv", "run_slate.mp4", "run_summary.txt"]
@@ -404,14 +445,16 @@ def test_the_dashboard_layout_uses_the_dashboard_figure_and_the_slate_drawing(tm
     assert folder_state(folder) == before
 
 
-def test_the_dashboard_layout_sends_one_frame_per_shown_step_to_the_fake(tmp_path, monkeypatch):
-    """The dashboard layout writes run_dashboard.mp4 and pipes exactly the shown steps of 1920 x 1080 frames."""
+def test_the_dashboard_layout_sends_each_step_for_its_held_frames_to_the_fake(tmp_path, monkeypatch):
+    """The dashboard layout writes run_dashboard.mp4 and pipes 24 frames of 1920 x 1080, the three shown steps held for 8 frames each."""
     base, folder = run_folder(tmp_path, 9)
     record = install_fake_ffmpeg(tmp_path, monkeypatch, FAKE_RECORDING)
     path = write_video(base, 4, 1.0, fps=24, layout="dashboard")
     assert path == folder / "run_dashboard.mp4"
     recorded = json.loads(record.read_text(encoding="utf-8"))
-    assert recorded["stdin_bytes"] == len(stills.shown_steps(9, 4)) * FRAME_BYTES
+    assert len(stills.shown_steps(9, 4)) == 3
+    assert recorded["runs"] == [8, 8, 8]
+    assert recorded["stdin_bytes"] == 24 * FRAME_BYTES
 
 
 def test_a_failing_ffmpeg_raises_and_leaves_the_earlier_video_and_no_temporary_file(tmp_path, monkeypatch, capsys):
