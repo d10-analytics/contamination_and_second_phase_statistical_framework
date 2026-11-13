@@ -4,7 +4,7 @@ This part of the repository draws pictures of a particle placement run that the 
 
 ## 1. Install the packages and ffmpeg
 
-Follow steps 1 to 3 of the [synthetic data guide](../synthetic_data_generation/README.md) and the [placement guide](../placement_simulation/README.md). Those steps install Python, a virtual environment and the packages in `synthetic_data_generation/requirements.txt`, which include matplotlib.
+Follow steps 1 to 3 of the [synthetic data guide](../synthetic_data_generation/README.md). Those steps install Python, a virtual environment and the packages in `synthetic_data_generation/requirements.txt`, which include matplotlib. The drawing functions need no other Python packages.
 
 Only the video needs ffmpeg, a separate program that encodes video. It must have the `libopenh264` encoder. One way to install it is to type `conda install ffmpeg` in a conda environment. The video function looks for ffmpeg in the folder of the Python that runs it. If ffmpeg is not there, it looks on the PATH. If it finds no ffmpeg, only the video function stops, with a message that tells you to install it. The still images and the packing map do not need ffmpeg.
 
