@@ -219,3 +219,18 @@ def test_dashboard_figure_draws_the_slate_through_slate_drawing(monkeypatch):
     data = dashboard.panel_data(result, [6])
     with pytest.raises(MarkerError):
         dashboard.build_dashboard_figure(result, data, 6, 640, 360)
+
+
+def test_a_hundred_class_dashboard_keeps_its_legend_in_the_room_under_the_panels():
+    """With 100 long-named classes the legend of a 1920 x 1080 dashboard stays within the bottom tenth of the figure, below every panel and inside its width."""
+    rows = [make_row(number, 10.0 + number % 7, True, 1, label=f"Particle class {number:03d}") for number in range(1, 101)]
+    result = make_result(rows)
+    data = dashboard.panel_data(result, [100])
+    figure = dashboard.build_dashboard_figure(result, data, 100, 1920, 1080)
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    legend_box = figure.legends[0].get_window_extent(renderer)
+    assert legend_box.y1 <= dashboard.LEGEND_ROOM * 1080
+    assert legend_box.x0 >= 0 and legend_box.x1 <= 1920
+    for axes in figure.axes:
+        assert legend_box.y1 <= axes.get_window_extent(renderer).y0

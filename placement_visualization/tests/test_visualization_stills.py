@@ -11,6 +11,8 @@
 # file, and every refused argument or file is a ValueError with the folder
 # unchanged.
 
+import re
+
 import numpy
 import pytest
 from matplotlib import colormaps
@@ -454,3 +456,76 @@ def test_the_slate_pixels_are_the_same_with_and_without_the_legend():
         figure.canvas.draw()
         without_legend = numpy.asarray(figure.canvas.buffer_rgba())[top:bottom, left:right]
         assert numpy.array_equal(with_legend, without_legend), case
+
+
+def saved_class_run(folder, slate, class_count):
+    """Save a run of that many long-labelled classes on the slate and return its base path."""
+    return save_rows(folder, class_rows(class_count, "Particle class"), slate)
+
+
+def refused_size_message(tmp_path, slate, class_count, long_side_px):
+    """Return the ValueError text for a still of that many classes at long_side_px, after checking nothing was written."""
+    base = saved_class_run(tmp_path, slate, class_count)
+    before = folder_state(tmp_path)
+    with pytest.raises(ValueError, match="long_side_px") as refused:
+        write_still_images(base, 10, long_side_px=long_side_px)
+    assert folder_state(tmp_path) == before
+    return str(refused.value)
+
+
+def test_a_size_too_small_for_the_legend_is_refused_before_anything_is_written(tmp_path):
+    """Forty classes at 100 pixels cannot fit a legend under a square, so the call names long_side_px and leaves the folder as it was."""
+    refused_size_message(tmp_path, SQUARE, 40, 100)
+
+
+def test_a_tall_rectangle_is_refused_and_the_size_named_in_the_refusal_draws_inside_the_picture(tmp_path):
+    """Forty classes at 100 pixels on a 100 x 300 rectangle are refused with nothing written; the long_side_px the refusal names writes every picture, each with a legend wholly inside it and a slate of positive size."""
+    slate = {"shape": "rectangle", "width_um": 100.0, "height_um": 300.0}
+    refused_folder = tmp_path / "refused"
+    refused_folder.mkdir()
+    message = refused_size_message(refused_folder, slate, 40, 100)
+    suggested = int(re.search(r"long_side_px=(\d+) works", message).group(1))
+    assert suggested > 100
+    drawn_folder = tmp_path / "drawn"
+    drawn_folder.mkdir()
+    base = saved_class_run(drawn_folder, slate, 40)
+    assert len(write_still_images(base, 20, long_side_px=suggested)) == 2
+    figure = drawn_still(slate, 40, suggested)
+    renderer = figure.canvas.get_renderer()
+    legend_box = figure.legends[0].get_window_extent(renderer)
+    axes_box = figure.axes[0].get_window_extent(renderer)
+    assert axes_box.width > 0 and axes_box.height > 0
+    assert legend_box.y1 <= axes_box.y0
+    assert legend_box.x0 >= 0 and legend_box.y0 >= 0
+    assert legend_box.x1 <= figure.bbox.x1 and legend_box.y1 <= figure.bbox.y1
+
+
+SMALL_PICTURE_CASES = [
+    (SQUARE, 11, 30),
+    (CIRCLE, 40, 30),
+    (TALL, 3, 100),
+    (WIDE, 40, 100),
+]
+
+
+def test_every_small_picture_either_draws_a_legend_inside_it_or_is_refused():
+    """For small sizes a picture never has a legend outside it or a slate of no size; the rest are ValueErrors naming long_side_px."""
+    drawn = 0
+    refused = 0
+    for case in SMALL_PICTURE_CASES:
+        result = result_of(class_rows(case[1], "Particle class"), case[0])
+        try:
+            figure = stills.build_still_figure(result, case[1], case[2])
+        except ValueError as error:
+            assert "long_side_px" in str(error), case
+            refused += 1
+            continue
+        figure.canvas.draw()
+        renderer = figure.canvas.get_renderer()
+        legend_box = figure.legends[0].get_window_extent(renderer)
+        axes_box = figure.axes[0].get_window_extent(renderer)
+        assert axes_box.width > 0 and axes_box.height > 0, case
+        assert legend_box.x0 >= -0.5 and legend_box.y0 >= -0.5, case
+        assert legend_box.x1 <= figure.bbox.x1 + 0.5 and legend_box.y1 <= figure.bbox.y1 + 0.5, case
+        drawn += 1
+    assert drawn > 0 and refused > 0

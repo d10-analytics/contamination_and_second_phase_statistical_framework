@@ -458,3 +458,29 @@ def test_a_genuinely_sub_frame_hold_is_still_refused_near_the_exact_ratio(tmp_pa
     assert video.smallest_passing_every(29, 0.28, 100) == 2
     with pytest.raises(RuntimeError):
         write_video(base, 1, 0.29, fps=100)
+
+
+def test_a_hundred_class_slate_frame_keeps_its_legend_in_the_room_under_the_slate():
+    """With 100 long-named classes the legend of the 1920 x 1080 slate frame stays within the bottom tenth of the frame, below the slate axes and inside its width."""
+    rows = [make_row(number, f"Particle class {number:03d}", 4.0, -40.0 + 0.7 * number, 0.0) for number in range(1, 101)]
+    result = PlacementResult(
+        slate=SQUARE,
+        mode="random",
+        max_tries=5,
+        buffer_um=1.0,
+        pixel_um=1.0,
+        order="shuffled",
+        seed=1,
+        input=INPUT,
+        requested_coverage=0.0,
+        achieved_coverage=0.0,
+        rows=tuple(rows),
+    )
+    figure = video.build_slate_frame(result, 100)
+    figure.canvas.draw()
+    renderer = figure.canvas.get_renderer()
+    legend_box = figure.legends[0].get_window_extent(renderer)
+    axes_box = figure.axes[0].get_window_extent(renderer)
+    assert legend_box.y1 <= video.LEGEND_ROOM * video.FRAME_HEIGHT_PX
+    assert legend_box.y1 <= axes_box.y0
+    assert legend_box.x0 >= 0 and legend_box.x1 <= video.FRAME_WIDTH_PX
