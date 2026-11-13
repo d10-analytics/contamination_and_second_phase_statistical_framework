@@ -139,7 +139,7 @@ def add_colour_bar(figure, axes, image):
 def build_packing_map_figure(result, sigma_um, long_side_px):
     """Return the figure: the slate's percentage map on a fixed 0-100 scale with a colour bar and the sigma used printed under the slate."""
     percentage, cell = covered_percentage(result, sigma_um, long_side_px)
-    figure, axes = slate_drawing.make_slate_figure(result.slate, long_side_px, 1)
+    figure, axes = slate_drawing.make_slate_figure(result.slate, long_side_px)
     half_width, half_height = slate_drawing.slate_extent(result.slate)
     columns = percentage.shape[1]
     rows = percentage.shape[0]

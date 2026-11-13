@@ -19,7 +19,9 @@ FIGURE_DPI = 100
 MARGIN_FRACTION = 0.02
 LEGEND_ROW_PX = 24
 LEGEND_MAX_FRACTION = 0.3
-LEGEND_COLUMN_PX = 120
+LEGEND_MAX_FONT_POINTS = 10.0
+LEGEND_MIN_FONT_POINTS = 1.0
+LEGEND_FONT_MARGIN_POINTS = 0.1
 BACKGROUND = "white"
 OUTLINE_COLOUR = "black"
 
@@ -42,37 +44,101 @@ def class_colours(rows):
     return colours
 
 
-def legend_columns(width_px, class_count):
-    """Return how many legend columns fit across the picture."""
-    return max(1, min(class_count, width_px // LEGEND_COLUMN_PX))
+def legend_handles(labels):
+    """Return one patch handle per label, in order, for measuring a legend."""
+    return [Patch(label=label) for label in labels]
 
 
-def legend_height_px(width_px, class_count, long_side_px):
-    """Return the height in pixels reserved under the slate for the legend, capped at part of the picture."""
-    rows = math.ceil(class_count / legend_columns(width_px, class_count))
-    return min(rows * LEGEND_ROW_PX, LEGEND_MAX_FRACTION * long_side_px)
+def add_legend_columns(figure, handles, size):
+    """Add a legend with the most columns that fit across the figure at this font size (one column when none does) and return (legend, its pixel box)."""
+    width_px = figure.get_figwidth() * figure.dpi
+    renderer = figure.canvas.get_renderer()
+    low, high = 1, len(handles)
+    while True:
+        columns = (low + high + 1) // 2
+        legend = figure.legend(handles=handles, loc="lower center", ncol=columns, frameon=False, fontsize=size)
+        box = legend.get_window_extent(renderer)
+        fits = box.x0 >= 0 and box.x1 <= width_px
+        if low >= high:
+            return legend, box
+        legend.remove()
+        if fits:
+            low = columns
+        else:
+            high = columns - 1
 
 
-def picture_layout(slate, long_side_px, class_count):
-    """Return (width px, height px, legend px, margin px, pixels per micrometre); the longer side is long_side_px."""
+def add_fitted_legend(figure, handles, max_height_px=None):
+    """Add a legend along the bottom of the figure and return it, laid out so it lies wholly inside the figure width.
+
+    Columns are as many as fit across the figure, giving the fewest rows; the
+    font shrinks until the legend also fits the given height (when there is
+    one), down to a minimum size.
+    """
+    width_px = figure.get_figwidth() * figure.dpi
+    size = LEGEND_MAX_FONT_POINTS
+    while True:
+        legend, box = add_legend_columns(figure, handles, size)
+        ratio = 1.0
+        if box.x0 < 0 or box.x1 > width_px:
+            ratio = min(ratio, width_px / box.width)
+        if max_height_px is not None and box.y1 > max_height_px:
+            ratio = min(ratio, max_height_px / box.y1)
+        if ratio >= 1.0 or size <= LEGEND_MIN_FONT_POINTS:
+            return legend
+        legend.remove()
+        size = max(LEGEND_MIN_FONT_POINTS, math.floor(size * ratio * 10.0) / 10.0 - LEGEND_FONT_MARGIN_POINTS)
+
+
+def legend_height_px(width_px, labels, long_side_px):
+    """Return the height in pixels the legend of these labels measures, from the picture bottom, in a picture width_px wide."""
+    cap = LEGEND_MAX_FRACTION * long_side_px
+    scratch = Figure(figsize=(width_px / FIGURE_DPI, max(cap, 1.0) / FIGURE_DPI), dpi=FIGURE_DPI)
+    FigureCanvasAgg(scratch)
+    legend = add_fitted_legend(scratch, legend_handles(labels), cap)
+    return legend.get_window_extent(scratch.canvas.get_renderer()).y1
+
+
+def picture_layout(slate, long_side_px, labels=None):
+    """Return (width px, height px, strip px, margin px, pixels per micrometre); the longer side is long_side_px.
+
+    The strip under the slate holds the legend of the labels as measured at the
+    picture's own width, or a single text row when labels is None.
+    """
     half_width, half_height = slate_extent(slate)
     margin = MARGIN_FRACTION * long_side_px
-    legend = legend_height_px(long_side_px, class_count, long_side_px)
+    if labels is None:
+        strip = min(LEGEND_ROW_PX, LEGEND_MAX_FRACTION * long_side_px)
+    else:
+        strip = legend_height_px(long_side_px, labels, long_side_px)
+    while True:
+        width, height, scale = fit_picture(half_width, half_height, long_side_px, margin, strip)
+        if labels is None:
+            break
+        needed = legend_height_px(width, labels, long_side_px)
+        if needed <= strip:
+            break
+        strip = needed
+    return width, height, strip, margin, scale
+
+
+def fit_picture(half_width, half_height, long_side_px, margin, strip):
+    """Return (width px, height px, pixels per micrometre) of the slate fitted in the long side with the margin and strip."""
     by_width = (long_side_px - 2 * margin) / (2 * half_width)
-    by_height = (long_side_px - 2 * margin - legend) / (2 * half_height)
+    by_height = (long_side_px - 2 * margin - strip) / (2 * half_height)
     scale = min(by_width, by_height)
     width = round(2 * half_width * scale + 2 * margin)
-    height = round(2 * half_height * scale + 2 * margin + legend)
+    height = round(2 * half_height * scale + 2 * margin + strip)
     if by_width <= by_height:
         width = long_side_px
     else:
         height = long_side_px
-    return max(width, 1), max(height, 1), legend, margin, scale
+    return max(width, 1), max(height, 1), scale
 
 
-def make_slate_figure(slate, long_side_px, class_count):
-    """Return (a Figure whose PNG long side is long_side_px, its one axes showing exactly the slate)."""
-    width, height, legend, margin, scale = picture_layout(slate, long_side_px, class_count)
+def make_slate_figure(slate, long_side_px, labels=None):
+    """Return (a Figure whose PNG long side is long_side_px, its one axes showing exactly the slate), with room under it for the legend of the labels."""
+    width, height, legend, margin, scale = picture_layout(slate, long_side_px, labels)
     half_width, half_height = slate_extent(slate)
     # The half pixel keeps the size from rounding down when converted to inches and back.
     figure = Figure(figsize=((width + 0.5) / FIGURE_DPI, (height + 0.5) / FIGURE_DPI), dpi=FIGURE_DPI, facecolor=BACKGROUND)
@@ -118,7 +184,8 @@ def draw_slate(axes, slate, rows, colours):
 
 
 def draw_legend(figure, colours):
-    """Add a legend listing every class, in sorted order, along the bottom of the figure."""
+    """Add a legend listing every class, in sorted order, along the bottom of the figure, wholly inside its width."""
     handles = [Patch(facecolor=colour, label=label) for label, colour in colours.items()]
-    width_px = figure.get_figwidth() * figure.dpi
-    figure.legend(handles=handles, loc="lower center", ncol=legend_columns(int(width_px), len(handles)), frameon=False)
+    long_side_px = max(figure.get_figwidth(), figure.get_figheight()) * figure.dpi
+    max_height_px = LEGEND_MAX_FRACTION * long_side_px
+    return add_fitted_legend(figure, handles, max_height_px)

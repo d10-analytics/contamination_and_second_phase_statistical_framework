@@ -30,7 +30,7 @@ def still_paths(base_path, steps, particle_count):
 def build_still_figure(result, step, long_side_px):
     """Return the figure for one step: the slate with the particles placed among the first step taken, and the legend."""
     colours = slate_drawing.class_colours(result.rows)
-    figure, axes = slate_drawing.make_slate_figure(result.slate, long_side_px, len(colours))
+    figure, axes = slate_drawing.make_slate_figure(result.slate, long_side_px, list(colours))
     slate_drawing.draw_slate(axes, result.slate, result.rows[:step], colours)
     slate_drawing.draw_legend(figure, colours)
     return figure
