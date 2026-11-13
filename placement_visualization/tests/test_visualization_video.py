@@ -435,7 +435,7 @@ def test_the_dashboard_layout_uses_the_dashboard_figure_and_the_slate_drawing(tm
     assert folder_state(folder) == before
     monkeypatch.setattr(dashboard, "build_dashboard_figure", original)
 
-    def slate_marker(axes, slate, rows, colours):
+    def slate_marker(axes, slate, rows, colours, outline_width=1.0):
         """Fail as a marker."""
         raise MarkerError("slate drawing reached")
 
