@@ -707,3 +707,65 @@ def test_measurement_readers_are_public_names():
 
     assert parse_measurements is outputs.parse_measurements
     assert read_measurements is outputs.read_measurements
+
+
+def run_three_files_with_a_folder_third(tmp_path, existing_names):
+    """Try to write three files whose third destination is a folder; return (the error, the three paths).
+
+    The files named in existing_names get an old copy first. The folder makes
+    the third rename fail naturally, with nothing patched.
+    """
+    paths = {"a": tmp_path / "a.txt", "b": tmp_path / "b.txt", "c": tmp_path / "c.txt"}
+    paths["c"].mkdir()
+    for name in existing_names:
+        paths[name].write_bytes(b"old " + name.encode("ascii"))
+    planned = [
+        (paths["a"], "new a", "A"),
+        (paths["b"], "new b", "B"),
+        (paths["c"], "new c", "C"),
+    ]
+    with pytest.raises(OSError) as caught:
+        outputs.write_files_together(planned)
+    return caught.value, paths
+
+
+def test_write_files_together_names_every_replaced_file_when_a_later_rename_fails(tmp_path):
+    """With both earlier files existing, both are replaced and the error names both, in order."""
+    error, paths = run_three_files_with_a_folder_third(tmp_path, ["a", "b"])
+    expected_end = f"the A {str(paths['a'])!r} and the B {str(paths['b'])!r} were replaced and the C was not"
+    assert str(error).startswith(f"the C {str(paths['c'])!r} could not be written (")
+    assert str(error).endswith(expected_end)
+    assert isinstance(error.__cause__, OSError)
+    assert paths["a"].read_bytes() == b"new a"
+    assert paths["b"].read_bytes() == b"new b"
+    assert paths["c"].is_dir()
+    assert folder_listing(tmp_path) == ["a.txt", "b.txt", "c.txt"]
+
+
+def test_write_files_together_deletes_new_files_and_names_only_the_replaced_one(tmp_path):
+    """When only the first file existed, the new second file is deleted and only the first is named."""
+    error, paths = run_three_files_with_a_folder_third(tmp_path, ["a"])
+    assert str(error).endswith(f"the A {str(paths['a'])!r} was replaced and the C was not")
+    assert paths["a"].read_bytes() == b"new a"
+    assert not paths["b"].exists()
+    assert paths["c"].is_dir()
+    assert folder_listing(tmp_path) == ["a.txt", "c.txt"]
+
+
+def test_write_files_together_raises_the_original_error_when_nothing_was_replaced(tmp_path):
+    """With no earlier file existing, the new files are deleted and the original error is raised unchanged."""
+    error, paths = run_three_files_with_a_folder_third(tmp_path, [])
+    assert "could not be written" not in str(error)
+    assert folder_listing(tmp_path) == ["c.txt"]
+
+
+def test_check_paths_refuses_in_order_with_the_given_hint(tmp_path):
+    """The first path that is a folder, or exists without overwrite, is refused with the caller's hint."""
+    (tmp_path / "old.txt").write_bytes(b"old")
+    (tmp_path / "folder").mkdir()
+    with pytest.raises(ValueError) as caught:
+        outputs.check_paths([tmp_path / "new.txt", tmp_path / "old.txt", tmp_path / "folder"], False, "the flag")
+    assert str(caught.value) == f"{str(tmp_path / 'old.txt')!r} already exists; pass the flag to replace it"
+    with pytest.raises(ValueError, match="is a folder; choose a file name instead"):
+        outputs.check_paths([tmp_path / "folder", tmp_path / "old.txt"], True, "the flag")
+    outputs.check_paths([tmp_path / "new.txt", tmp_path / "old.txt"], True, "the flag")
