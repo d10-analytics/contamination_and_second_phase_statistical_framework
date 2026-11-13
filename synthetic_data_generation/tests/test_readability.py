@@ -14,6 +14,8 @@ from pathlib import Path
 # The package folder is found from this file's own location, so files added by
 # later work are checked without editing this test.
 PACKAGE_FOLDER = Path(__file__).resolve().parent.parent
+REPOSITORY_ROOT = PACKAGE_FOLDER.parent
+CHECKED_FOLDERS = [PACKAGE_FOLDER, REPOSITORY_ROOT / "placement_simulation"]
 
 COMPREHENSION_TYPES = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 DEFINITION_TYPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
@@ -419,7 +421,15 @@ def test_package_discovery_includes_this_file():
     assert Path(__file__).resolve() in find_python_files(PACKAGE_FOLDER)
 
 
-def test_every_package_python_file_is_readable():
-    """Every .py file under the package folder, including this one, passes every rule."""
-    problems = find_package_violations(PACKAGE_FOLDER)
+def test_discovery_finds_a_file_in_each_checked_folder():
+    """Each checked folder holds at least one .py file, so neither folder is silently skipped."""
+    for folder in CHECKED_FOLDERS:
+        assert find_python_files(folder) != [], str(folder)
+
+
+def test_every_python_file_in_both_folders_is_readable():
+    """Every .py file under the package and simulator folders passes every rule."""
+    problems = []
+    for folder in CHECKED_FOLDERS:
+        problems.extend(find_package_violations(folder))
     assert problems == [], "\n".join(problems)
