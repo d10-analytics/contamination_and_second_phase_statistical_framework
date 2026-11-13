@@ -1,5 +1,6 @@
-# This file checks that every Python file in the synthetic data package is easy
-# to read for someone who has never used Python. It reads each file as text and
+# This file checks that every Python file in the synthetic data, placement
+# simulation and placement visualization packages is easy to read for someone
+# who has never used Python. It reads each file as text and
 # as a syntax tree (the shape Python itself builds from the code) and reports
 # every place where a readability rule is broken. The rules are: a plain
 # comment on the first line; a docstring (a short description in quotes) on every
@@ -15,7 +16,7 @@ from pathlib import Path
 # later work are checked without editing this test.
 PACKAGE_FOLDER = Path(__file__).resolve().parent.parent
 REPOSITORY_ROOT = PACKAGE_FOLDER.parent
-CHECKED_FOLDERS = [PACKAGE_FOLDER, REPOSITORY_ROOT / "placement_simulation"]
+CHECKED_FOLDERS = [PACKAGE_FOLDER, REPOSITORY_ROOT / "placement_simulation", REPOSITORY_ROOT / "placement_visualization"]
 
 COMPREHENSION_TYPES = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 DEFINITION_TYPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
@@ -422,13 +423,13 @@ def test_package_discovery_includes_this_file():
 
 
 def test_discovery_finds_a_file_in_each_checked_folder():
-    """Each checked folder holds at least one .py file, so neither folder is silently skipped."""
+    """Each checked folder holds at least one .py file, so no folder is silently skipped."""
     for folder in CHECKED_FOLDERS:
         assert find_python_files(folder) != [], str(folder)
 
 
-def test_every_python_file_in_both_folders_is_readable():
-    """Every .py file under the package and simulator folders passes every rule."""
+def test_every_python_file_in_every_checked_folder_is_readable():
+    """Every .py file under the package, simulator and visualization folders passes every rule."""
     problems = []
     for folder in CHECKED_FOLDERS:
         problems.extend(find_package_violations(folder))
