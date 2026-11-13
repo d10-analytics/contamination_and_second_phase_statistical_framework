@@ -1,5 +1,6 @@
 AGENTS.md
 synthetic_data_generation/example/output/
 placement_simulation/example/output/
-placement_visualization/example/output/
+placement_visualization/example/output_random/
+placement_visualization/example/output_center/
 __pycache__/
