@@ -66,3 +66,4 @@ Before anything is placed, the run reports the requested coverage on the termina
 - Centre placement time grows with the square of the number of particles: about two minutes for 2,000 particles on a 1 cm slate at 1 um cells. Raise `pixel_um` to make it quicker.
 - A failed run writes no output files. The tool saves the placements file and then the summary; if the second save fails after the first replaced an old file (with `overwrite=True`), the error message says so.
 - To repeat a saved run, call `replay_placement` with the summary file; it reads the CSV recorded beside it, or the path you give as a second argument.
+- To draw a saved run as still images, a video or a packing map, see the [placement pictures guide](../placement_visualization/README.md). `read_placement_outputs` reads a saved run back into the result that was placed.

@@ -32,6 +32,10 @@ A small, readable generator that produces example particle measurements for tryi
 
 A small simulator that places the particles of a size list, such as the generator's example CSV, on a slate without overlap, and saves and replays each run, lives in `placement_simulation/`. See the [placement guide](placement_simulation/README.md) for how to run it.
 
+## Particle Placement Pictures
+
+A small set of drawing functions that turns a saved placement run into still images, a time-lapse video and a packing map lives in `placement_visualization/`. See the [placement pictures guide](placement_visualization/README.md) for how to run it.
+
 ## License
 
 This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
