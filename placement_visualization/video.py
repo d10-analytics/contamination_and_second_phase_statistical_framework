@@ -26,6 +26,7 @@ from placement_simulation import placement
 from placement_visualization import dashboard, picture_files, slate_drawing, stills
 from synthetic_data_generation import outputs
 
+SCHEDULE_TOLERANCE = 1e-9
 LAYOUTS = ("slate", "dashboard")
 FRAME_WIDTH_PX = 1920
 FRAME_HEIGHT_PX = 1080
@@ -55,15 +56,20 @@ def shown_step_count(particle_count, every):
     return -(-particle_count // every)
 
 
+def holds_one_frame_each(shown_count, frames_available):
+    """Say whether frames_available (video_seconds x fps) gives every shown step a whole frame, ignoring float rounding error at an exact ratio."""
+    return frames_available >= shown_count * (1.0 - SCHEDULE_TOLERANCE)
+
+
 def smallest_passing_every(particle_count, video_seconds, fps):
     """Return the smallest every whose shown steps each get at least one frame, or None when none does."""
     frames_available = video_seconds * fps
-    if frames_available < 1:
+    if not holds_one_frame_each(1, frames_available):
         return None
-    candidate = max(1, -(-particle_count // math.floor(frames_available)))
-    while candidate > 1 and frames_available / shown_step_count(particle_count, candidate - 1) >= 1:
+    candidate = max(1, -(-particle_count // max(1, frame_count(video_seconds, fps))))
+    while candidate > 1 and holds_one_frame_each(shown_step_count(particle_count, candidate - 1), frames_available):
         candidate -= 1
-    while frames_available / shown_step_count(particle_count, candidate) < 1:
+    while not holds_one_frame_each(shown_step_count(particle_count, candidate), frames_available):
         candidate += 1
     return candidate
 
@@ -71,9 +77,9 @@ def smallest_passing_every(particle_count, video_seconds, fps):
 def check_schedule(shown, particle_count, every, video_seconds, fps):
     """Raise ValueError when a shown step would be held for less than one frame, naming the smallest every that passes."""
     frames_available = video_seconds * fps
-    if frames_available / len(shown) >= 1:
+    if holds_one_frame_each(len(shown), frames_available):
         return
-    if frames_available < 1:
+    if not holds_one_frame_each(1, frames_available):
         raise ValueError(
             f"video_seconds={video_seconds!r} at fps={fps!r} is shorter than one frame, so no every can show a step; choose a longer video or a higher fps"
         )
