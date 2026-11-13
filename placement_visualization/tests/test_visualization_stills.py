@@ -448,8 +448,9 @@ def drawn_still(slate, class_count, long_side_px, prefix):
 
 def test_the_legend_lies_under_the_slate_and_wholly_inside_the_picture_at_the_set_font():
     """The legend's drawn extent is below the slate axes and inside the figure, in 10 point type, so it never covers the slate or runs off the picture."""
-    for case in LEGEND_CASES:
-        figure = drawn_still(*case)
+    for slate, class_count, long_side_px, prefix in LEGEND_CASES:
+        case = (slate, class_count, long_side_px, prefix)
+        figure = drawn_still(slate, class_count, long_side_px, prefix)
         renderer = figure.canvas.get_renderer()
         legend_box = figure.legends[0].get_window_extent(renderer)
         axes_box = figure.axes[0].get_window_extent(renderer)
@@ -463,8 +464,9 @@ def test_the_legend_lies_under_the_slate_and_wholly_inside_the_picture_at_the_se
 
 def test_the_slate_pixels_are_the_same_with_and_without_the_legend():
     """Removing the legend changes no pixel inside the slate axes, so the legend overlaps nothing the slate shows."""
-    for case in LEGEND_CASES:
-        figure = drawn_still(*case)
+    for slate, class_count, long_side_px, prefix in LEGEND_CASES:
+        case = (slate, class_count, long_side_px, prefix)
+        figure = drawn_still(slate, class_count, long_side_px, prefix)
         box = figure.axes[0].get_window_extent(figure.canvas.get_renderer())
         height = figure.canvas.get_width_height()[1]
         top, bottom = int(height - box.y1), int(numpy.ceil(height - box.y0))
