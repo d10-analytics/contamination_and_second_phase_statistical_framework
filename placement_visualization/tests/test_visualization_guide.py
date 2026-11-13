@@ -44,6 +44,13 @@ def test_guide_holds_the_command_the_functions_the_arguments_and_the_names():
         assert word in guide, word
 
 
+def test_guide_states_what_long_side_px_measures_for_each_picture():
+    """The guide says long_side_px is the PNG's long side for stills and the number of grid cells along the slate's long side for the packing map."""
+    guide = guide_text()
+    assert "long side of each PNG" in guide
+    assert "number of grid cells along the long side of the slate" in guide
+
+
 def test_guide_names_only_existing_paths_or_written_files():
     """Every placement_visualization/ path in the guide exists, or is the output folder or a file the example writes there."""
     found = re.findall(r"placement_visualization/[A-Za-z0-9_./-]+", guide_text())
