@@ -49,14 +49,15 @@ SIEVE_UPPER_UM = 120.0
 # the example have a total area of about 1.33 million square micrometres, so
 # they request a coverage of about 0.41: the particles would fill about 41% of
 # the slate if all fitted. That is crowded enough for random placement to
-# reject tries that overlap.
+# reject tries that come too close to a placed particle.
 SLATE = {"shape": "square", "side_um": 1800.0}
 
-# Random placement makes up to MAX_TRIES tries per particle. Centre placement
-# makes one search per particle, so it always uses 1. BUFFER_UM is the free gap
-# kept between particles and the edge, and PIXEL_UM is the cell size of the
-# clearance map that centre placement searches. The larger cell keeps the
-# example quick.
+# Random placement makes up to RANDOM_MAX_TRIES tries per particle. Centre
+# placement makes one search per particle, so it uses CENTRE_MAX_TRIES, which
+# is 1. BUFFER_UM is the minimum free gap between the surfaces of two
+# particles, counted once per pair; it is not applied at the slate edge, which
+# a particle may touch. PIXEL_UM is the cell size of the clearance map that
+# centre placement searches. The larger cell keeps the example quick.
 RANDOM_MAX_TRIES = 20
 CENTRE_MAX_TRIES = 1
 BUFFER_UM = 1.0
@@ -111,8 +112,8 @@ def main(output_folder=DEFAULT_OUTPUT_FOLDER):
     # Step 3: random placement, saved and replayed
     # ------------------------------------------------------------------
     # Each particle in turn is tried at random locations until one fits inside
-    # the slate without touching another particle, or until MAX_TRIES tries
-    # have failed. The requested coverage is printed first. Every rejected try
+    # the slate and keeps at least BUFFER_UM from every placed particle, or
+    # until RANDOM_MAX_TRIES tries have failed. The requested coverage is printed first. Every rejected try
     # is counted, so the run shows how crowded the slate was. The particles are
     # given by the CSV's path, so the summary records the file name and its
     # checksum. The saved run is then replayed from its summary alone.
