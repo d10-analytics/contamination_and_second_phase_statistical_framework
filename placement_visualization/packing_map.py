@@ -21,6 +21,10 @@ SUFFIX = "_packing_map.png"
 SIGMA_FACTOR = 2.0
 COLOUR_MAP = "viridis"
 COLOUR_BAR_PAD = 0.03
+TEXT_FILL = 0.7
+TEXT_WIDTH_FRACTION = 0.96
+MIN_FONT_POINTS = 1.0
+FONT_STEP_POINTS = 0.5
 
 
 def map_path(base_path):
@@ -87,10 +91,24 @@ def covered_percentage(result, sigma_um, long_side_px):
     return np.ma.masked_array(percentage, mask=~on_slate), cell
 
 
+def add_sigma_text(figure, sigma_um):
+    """Add the sigma text in the strip under the slate, shrunk until it lies wholly inside the figure at any size."""
+    width_px = figure.get_figwidth() * figure.dpi
+    height_px = figure.get_figheight() * figure.dpi
+    strip_px = min(slate_drawing.LEGEND_ROW_PX, slate_drawing.LEGEND_MAX_FRACTION * max(width_px, height_px))
+    size = TEXT_FILL * strip_px * 72.0 / figure.dpi
+    text = figure.text(0.5, strip_px / 2.0 / height_px, f"blur sigma {sigma_um:g} um", ha="center", va="center", fontsize=size)
+    renderer = figure.canvas.get_renderer()
+    while size > MIN_FONT_POINTS and text.get_window_extent(renderer).width > TEXT_WIDTH_FRACTION * width_px:
+        size -= FONT_STEP_POINTS
+        text.set_fontsize(size)
+    return text
+
+
 def build_packing_map_figure(result, sigma_um, long_side_px):
-    """Return the figure: the slate's percentage map on a fixed 0-100 scale with a colour bar and the sigma used in the colour bar label."""
+    """Return the figure: the slate's percentage map on a fixed 0-100 scale with a colour bar and the sigma used printed under the slate."""
     percentage, cell = covered_percentage(result, sigma_um, long_side_px)
-    figure, axes = slate_drawing.make_slate_figure(result.slate, long_side_px, 0)
+    figure, axes = slate_drawing.make_slate_figure(result.slate, long_side_px, 1)
     half_width, half_height = slate_drawing.slate_extent(result.slate)
     columns = percentage.shape[1]
     rows = percentage.shape[0]
@@ -100,7 +118,8 @@ def build_packing_map_figure(result, sigma_um, long_side_px):
     axes.set_ylim(-half_height, half_height)
     slate_drawing.draw_outline(axes, result.slate)
     colour_bar = figure.colorbar(image, ax=axes, pad=COLOUR_BAR_PAD)
-    colour_bar.set_label(f"covered (%), blur sigma {sigma_um:g} um")
+    colour_bar.set_label("covered (%)")
+    add_sigma_text(figure, sigma_um)
     return figure
 
 
