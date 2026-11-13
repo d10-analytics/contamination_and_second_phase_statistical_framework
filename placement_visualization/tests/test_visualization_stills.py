@@ -390,3 +390,67 @@ def test_replacements_of_shown_steps_and_slate_drawing_reach_the_writer(tmp_path
     monkeypatch.setattr(slate_drawing, "draw_slate", marker_draw)
     with pytest.raises(MarkerError):
         write_still_images(base, 3, long_side_px=60, overwrite=True)
+
+
+def class_rows(count, prefix="Class"):
+    """Return one placed particle for each of count classes, spread along the middle of the slate."""
+    return [make_row(number, f"{prefix} {number:02d}", 8.0, -40.0 + 8.0 * number, -40.0 + 8.0 * number) for number in range(1, count + 1)]
+
+
+def result_of(rows, slate):
+    """Return a placement result holding the rows on the slate, without saving it."""
+    return PlacementResult(
+        slate=slate,
+        mode="random",
+        max_tries=5,
+        buffer_um=1.0,
+        pixel_um=1.0,
+        order="shuffled",
+        seed=1,
+        input=INPUT,
+        requested_coverage=0.0,
+        achieved_coverage=0.0,
+        rows=tuple(rows),
+    )
+
+
+TALL = {"shape": "rectangle", "width_um": 100.0, "height_um": 1000.0}
+WIDE = {"shape": "rectangle", "width_um": 1000.0, "height_um": 100.0}
+LEGEND_CASES = [(WIDE, 11, 2000), (TALL, 11, 2000), (SQUARE, 11, 400), (TALL, 3, 400)]
+
+
+def drawn_still(slate, class_count, long_side_px):
+    """Return the drawn still figure of a run with that many classes, each named with a long label."""
+    result = result_of(class_rows(class_count, "Particle class"), slate)
+    figure = stills.build_still_figure(result, class_count, long_side_px)
+    figure.canvas.draw()
+    return figure
+
+
+def test_the_legend_lies_under_the_slate_and_wholly_inside_the_picture():
+    """The legend's drawn extent is below the slate axes and inside the figure, so it never covers the slate or runs off the picture."""
+    for case in LEGEND_CASES:
+        figure = drawn_still(case[0], case[1], case[2])
+        renderer = figure.canvas.get_renderer()
+        legend_box = figure.legends[0].get_window_extent(renderer)
+        axes_box = figure.axes[0].get_window_extent(renderer)
+        assert legend_box.y1 <= axes_box.y0, case
+        assert legend_box.x0 >= 0, case
+        assert legend_box.y0 >= 0, case
+        assert legend_box.x1 <= figure.bbox.x1, case
+        assert legend_box.y1 <= figure.bbox.y1, case
+
+
+def test_the_slate_pixels_are_the_same_with_and_without_the_legend():
+    """Removing the legend changes no pixel inside the slate axes, so the legend overlaps nothing the slate shows."""
+    for case in LEGEND_CASES:
+        figure = drawn_still(case[0], case[1], case[2])
+        box = figure.axes[0].get_window_extent(figure.canvas.get_renderer())
+        height = figure.canvas.get_width_height()[1]
+        top, bottom = int(height - box.y1), int(numpy.ceil(height - box.y0))
+        left, right = int(box.x0), int(numpy.ceil(box.x1))
+        with_legend = numpy.asarray(figure.canvas.buffer_rgba())[top:bottom, left:right].copy()
+        figure.legends[0].remove()
+        figure.canvas.draw()
+        without_legend = numpy.asarray(figure.canvas.buffer_rgba())[top:bottom, left:right]
+        assert numpy.array_equal(with_legend, without_legend), case
