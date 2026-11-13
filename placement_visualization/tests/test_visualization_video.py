@@ -252,7 +252,7 @@ def test_a_missing_ffmpeg_fails_only_the_video(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match="ffmpeg"):
         write_video(base, 2, 1.0, fps=10)
     assert folder_state(folder) == before
-    paths = write_still_images(base, 3, long_side_px=60)
+    paths = write_still_images(base, 3, long_side_px=400)
     assert len(paths) == 2 and all(path.is_file() for path in paths)
     assert write_packing_map(base, long_side_px=60).is_file()
 

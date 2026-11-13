@@ -5,13 +5,13 @@
 # positions found through the transData of the figure the writer saves
 # (colour inside a particle's true radius, background outside it, a particle
 # taken later absent, an unplaced particle never drawn, an eleven-class file
-# repeating the first colour); checks the legend and the picture size; and
+# repeating the first colour); checks that the legend lies below the slate and
+# inside the picture, that the slate keeps its pixel scale whatever the legend,
+# and that a size below the minimum is refused; and
 # checks the writing rules: an existing file is refused without overwrite and
 # nothing earlier is written, a failed save leaves no cut-off or temporary
 # file, and every refused argument or file is a ValueError with the folder
 # unchanged.
-
-import re
 
 import numpy
 import pytest
@@ -141,7 +141,7 @@ def test_file_names_and_folder_contents(tmp_path):
         folder = tmp_path / f"every_{every}"
         folder.mkdir()
         base = save_rows(folder, ten_rows())
-        paths = write_still_images(base, every, long_side_px=60)
+        paths = write_still_images(base, every, long_side_px=PIXELS)
         names = [f"run_step_{step}.png" for step in steps]
         assert [path.name for path in paths] == names
         assert all(path.parent == folder for path in paths)
@@ -152,7 +152,7 @@ def test_a_count_of_one_hundred_pads_to_three_digits(tmp_path):
     """With 100 particles the step number has three digits, so a step of 5 is named _step_005."""
     rows = [make_row(number, "A", 1.0, -49.0 + 0.9 * number, 0.0) for number in range(1, 101)]
     base = save_rows(tmp_path, rows)
-    paths = write_still_images(base, 50, long_side_px=40)
+    paths = write_still_images(base, 50, long_side_px=PIXELS)
     assert [path.name for path in paths] == ["run_step_050.png", "run_step_100.png"]
 
 
@@ -169,7 +169,7 @@ def test_pixels_show_true_size_circles_for_each_step(tmp_path):
         figure.canvas.draw()
         pixels = png_pixels(path)
         assert numpy.array_equal(pixels, numpy.asarray(figure.canvas.buffer_rgba())), step
-        assert max(pixels.shape[:2]) == PIXELS
+        assert pixels.shape[:2] == (figure.canvas.get_width_height()[1], figure.canvas.get_width_height()[0])
         for row in result.rows[:step]:
             if not row.placed:
                 continue
@@ -222,16 +222,23 @@ def test_the_legend_lists_every_class_in_sorted_order_at_every_step(tmp_path):
         assert labels == ["A", "B", "C"], step
 
 
-def test_the_picture_long_side_is_the_requested_size_for_each_slate_shape(tmp_path):
-    """The PNG's longer side is exactly long_side_px for a square, a wide rectangle, a tall rectangle and a circle."""
+def test_the_slate_long_side_is_the_requested_size_for_each_slate_shape_and_the_legend_adds_below(tmp_path):
+    """In the written PNG the slate's long side is long_side_px for a square, a wide rectangle, a tall rectangle and a circle, and the PNG is taller than it by the legend."""
     slates = [SQUARE, RECTANGLE, {"shape": "rectangle", "width_um": 60.0, "height_um": 150.0}, CIRCLE]
     for number, slate in enumerate(slates):
         folder = tmp_path / str(number)
         folder.mkdir()
         base = save_rows(folder, [make_row(1, "A", 10.0, 0.0, 0.0)], slate)
-        for size in [PIXELS, 333]:
+        result = saving.read_placement_outputs(base)
+        for size in [PIXELS, 733]:
             [path] = write_still_images(base, 1, long_side_px=size, overwrite=True)
-            assert max(imread(path).shape[:2]) == size, (slate, size)
+            figure = stills.build_still_figure(result, 1, size)
+            figure.canvas.draw()
+            axes_box = figure.axes[0].get_window_extent(figure.canvas.get_renderer())
+            assert max(axes_box.width, axes_box.height) == pytest.approx(size, abs=1e-6), (slate, size)
+            height, width = imread(path).shape[:2]
+            assert (width, height) == figure.canvas.get_width_height(), (slate, size)
+            assert height > axes_box.height, (slate, size)
 
 
 def test_circles_and_the_outline_follow_the_slate_extent(tmp_path):
@@ -254,7 +261,7 @@ def test_an_existing_last_step_file_without_overwrite_writes_nothing_earlier(tmp
     existing.write_bytes(b"old picture")
     before = folder_state(tmp_path)
     with pytest.raises(ValueError, match="overwrite=True"):
-        write_still_images(base, 3, long_side_px=60)
+        write_still_images(base, 3, long_side_px=PIXELS)
     assert folder_state(tmp_path) == before
     assert existing.read_bytes() == b"old picture"
 
@@ -264,7 +271,7 @@ def test_overwrite_replaces_existing_files(tmp_path):
     base = save_rows(tmp_path, ten_rows())
     existing = tmp_path / "run_step_10.png"
     existing.write_bytes(b"old picture")
-    paths = write_still_images(base, 3, long_side_px=60, overwrite=True)
+    paths = write_still_images(base, 3, long_side_px=PIXELS, overwrite=True)
     assert existing in paths
     assert existing.read_bytes().startswith(b"\x89PNG")
     assert sorted(entry.name for entry in tmp_path.iterdir()) == sorted(
@@ -277,7 +284,7 @@ def test_a_folder_at_a_destination_is_refused(tmp_path):
     base = save_rows(tmp_path, ten_rows())
     (tmp_path / "run_step_10.png").mkdir()
     with pytest.raises(ValueError):
-        write_still_images(base, 5, long_side_px=60, overwrite=True)
+        write_still_images(base, 5, long_side_px=PIXELS, overwrite=True)
     assert sorted(entry.name for entry in tmp_path.iterdir()) == ["run_placements.csv", "run_step_10.png", "run_summary.txt"]
 
 
@@ -307,7 +314,7 @@ def test_a_failed_save_leaves_the_earlier_good_file_and_no_temporary_file(tmp_pa
     before = folder_state(tmp_path)
     calls = partial_save_after(0, monkeypatch)
     with pytest.raises(OSError):
-        write_still_images(base, 5, long_side_px=60, overwrite=True)
+        write_still_images(base, 5, long_side_px=PIXELS, overwrite=True)
     assert len(calls) == 1
     assert calls[0].name.startswith(".") and calls[0].name.endswith(".tmp")
     assert folder_state(tmp_path) == before
@@ -318,10 +325,9 @@ def test_a_failure_part_way_leaves_the_earlier_steps_complete(tmp_path, monkeypa
     base = save_rows(tmp_path, ten_rows())
     partial_save_after(1, monkeypatch)
     with pytest.raises(OSError):
-        write_still_images(base, 5, long_side_px=60)
+        write_still_images(base, 5, long_side_px=PIXELS)
     assert sorted(entry.name for entry in tmp_path.iterdir()) == ["run_placements.csv", "run_step_05.png", "run_summary.txt"]
     assert (tmp_path / "run_step_05.png").read_bytes().startswith(b"\x89PNG")
-    assert max(imread(tmp_path / "run_step_05.png").shape[:2]) == 60
 
 
 def test_each_refused_argument_is_a_value_error_with_nothing_written(tmp_path):
@@ -330,7 +336,7 @@ def test_each_refused_argument_is_a_value_error_with_nothing_written(tmp_path):
     before = folder_state(tmp_path)
     for bad in [0, -1, 1.5, True]:
         with pytest.raises(ValueError, match="every"):
-            write_still_images(base, bad, long_side_px=60)
+            write_still_images(base, bad, long_side_px=PIXELS)
         with pytest.raises(ValueError, match="long_side_px"):
             write_still_images(base, 3, long_side_px=bad)
         assert folder_state(tmp_path) == before
@@ -342,7 +348,7 @@ def test_a_file_with_no_particles_is_refused(tmp_path):
     base = save_rows(tmp_path, [])
     before = folder_state(tmp_path)
     with pytest.raises(ValueError, match="no particles"):
-        write_still_images(base, 1, long_side_px=60)
+        write_still_images(base, 1, long_side_px=PIXELS)
     assert folder_state(tmp_path) == before
 
 
@@ -354,10 +360,10 @@ def test_reader_refusals_reach_the_caller_unchanged(tmp_path):
     placements.write_text(text.replace("placement_order", "order"), encoding="utf-8")
     before = folder_state(tmp_path)
     with pytest.raises(ValueError, match="header"):
-        write_still_images(base, 3, long_side_px=60)
+        write_still_images(base, 3, long_side_px=PIXELS)
     assert folder_state(tmp_path) == before
     with pytest.raises(ValueError, match="does not exist"):
-        write_still_images(tmp_path / "other", 3, long_side_px=60)
+        write_still_images(tmp_path / "other", 3, long_side_px=PIXELS)
 
 
 def test_the_drawing_reads_the_saved_files_only_through_the_placement_reader(tmp_path, monkeypatch):
@@ -370,7 +376,7 @@ def test_the_drawing_reads_the_saved_files_only_through_the_placement_reader(tmp
 
     monkeypatch.setattr(saving, "read_placement_outputs", marker_reader)
     with pytest.raises(MarkerError):
-        write_still_images(base, 3, long_side_px=60)
+        write_still_images(base, 3, long_side_px=PIXELS)
 
 
 def last_step_only(particle_count, every):
@@ -382,7 +388,7 @@ def test_replacements_of_shown_steps_and_slate_drawing_reach_the_writer(tmp_path
     """The writer calls the shown-steps and slate-drawing functions on their modules."""
     base = save_rows(tmp_path, ten_rows())
     monkeypatch.setattr(stills, "shown_steps", last_step_only)
-    paths = write_still_images(base, 3, long_side_px=60)
+    paths = write_still_images(base, 3, long_side_px=PIXELS)
     assert [path.name for path in paths] == ["run_step_10.png"]
 
     def marker_draw(axes, slate, rows, colours):
@@ -391,7 +397,7 @@ def test_replacements_of_shown_steps_and_slate_drawing_reach_the_writer(tmp_path
 
     monkeypatch.setattr(slate_drawing, "draw_slate", marker_draw)
     with pytest.raises(MarkerError):
-        write_still_images(base, 3, long_side_px=60, overwrite=True)
+        write_still_images(base, 3, long_side_px=PIXELS, overwrite=True)
 
 
 def class_rows(count, prefix="Class"):
@@ -418,21 +424,32 @@ def result_of(rows, slate):
 
 TALL = {"shape": "rectangle", "width_um": 100.0, "height_um": 1000.0}
 WIDE = {"shape": "rectangle", "width_um": 1000.0, "height_um": 100.0}
-LEGEND_CASES = [(WIDE, 11, 2000), (TALL, 11, 2000), (SQUARE, 11, 400), (TALL, 3, 400)]
+LONG, SHORT = "Particle class", "Class"
+LEGEND_CASES = [
+    (WIDE, 11, 2000, LONG),
+    (TALL, 11, 2000, LONG),
+    (SQUARE, 11, 400, LONG),
+    (TALL, 3, 400, LONG),
+    (SQUARE, 5, 100, LONG),
+    (WIDE, 3, 137, SHORT),
+    (WIDE, 25, 400, LONG),
+    (TALL, 25, 400, LONG),
+    (SQUARE, 1, 400, SHORT),
+]
 
 
-def drawn_still(slate, class_count, long_side_px):
-    """Return the drawn still figure of a run with that many classes, each named with a long label."""
-    result = result_of(class_rows(class_count, "Particle class"), slate)
+def drawn_still(slate, class_count, long_side_px, prefix):
+    """Return the drawn still figure of a run with that many classes named with the prefix."""
+    result = result_of(class_rows(class_count, prefix), slate)
     figure = stills.build_still_figure(result, class_count, long_side_px)
     figure.canvas.draw()
     return figure
 
 
-def test_the_legend_lies_under_the_slate_and_wholly_inside_the_picture():
-    """The legend's drawn extent is below the slate axes and inside the figure, so it never covers the slate or runs off the picture."""
+def test_the_legend_lies_under_the_slate_and_wholly_inside_the_picture_at_the_set_font():
+    """The legend's drawn extent is below the slate axes and inside the figure, in 10 point type, so it never covers the slate or runs off the picture."""
     for case in LEGEND_CASES:
-        figure = drawn_still(case[0], case[1], case[2])
+        figure = drawn_still(*case)
         renderer = figure.canvas.get_renderer()
         legend_box = figure.legends[0].get_window_extent(renderer)
         axes_box = figure.axes[0].get_window_extent(renderer)
@@ -441,12 +458,13 @@ def test_the_legend_lies_under_the_slate_and_wholly_inside_the_picture():
         assert legend_box.y0 >= 0, case
         assert legend_box.x1 <= figure.bbox.x1, case
         assert legend_box.y1 <= figure.bbox.y1, case
+        assert {text.get_fontsize() for text in figure.legends[0].get_texts()} == {slate_drawing.LEGEND_MAX_FONT_POINTS}, case
 
 
 def test_the_slate_pixels_are_the_same_with_and_without_the_legend():
     """Removing the legend changes no pixel inside the slate axes, so the legend overlaps nothing the slate shows."""
     for case in LEGEND_CASES:
-        figure = drawn_still(case[0], case[1], case[2])
+        figure = drawn_still(*case)
         box = figure.axes[0].get_window_extent(figure.canvas.get_renderer())
         height = figure.canvas.get_width_height()[1]
         top, bottom = int(height - box.y1), int(numpy.ceil(height - box.y0))
@@ -458,115 +476,49 @@ def test_the_slate_pixels_are_the_same_with_and_without_the_legend():
         assert numpy.array_equal(with_legend, without_legend), case
 
 
+def test_the_slate_scale_does_not_depend_on_the_classes():
+    """The slate axes' long side is long_side_px pixels with 1, 5 and 25 classes, and one micrometre spans the same number of pixels."""
+    for slate, size in [(SQUARE, 400), (WIDE, 733), (TALL, 500)]:
+        half = max(slate_drawing.slate_extent(slate))
+        for class_count in [1, 5, 25]:
+            figure = drawn_still(slate, class_count, size, LONG)
+            axes_box = figure.axes[0].get_window_extent(figure.canvas.get_renderer())
+            assert max(axes_box.width, axes_box.height) == pytest.approx(size, abs=1e-6), (slate, size, class_count)
+            origin = figure.axes[0].transData.transform((0.0, 0.0))
+            unit = figure.axes[0].transData.transform((1.0, 1.0)) - origin
+            assert unit == pytest.approx([size / (2 * half)] * 2, abs=1e-9), (slate, size, class_count)
+
+
+def test_a_particle_spans_its_true_diameter_in_pixels_below_a_large_legend():
+    """A 50 micrometre particle on a 100 micrometre square slate at 400 pixels is 200 pixels across, though 25 classes put a tall legend below it."""
+    rows = class_rows(25)
+    rows.append(make_row(26, "Class 00", 50.0, 0.0, 0.0))
+    figure = stills.build_still_figure(result_of(rows, SQUARE), 26, PIXELS)
+    figure.canvas.draw()
+    pixels = numpy.asarray(figure.canvas.buffer_rgba())[:, :, :3].astype(int)
+    centre_row = pixels.shape[0] - 1 - int(figure.axes[0].transData.transform((0.0, 0.0))[1])
+    painted = numpy.all(numpy.abs(pixels[centre_row] - colour_of(0)) <= 3, axis=1)
+    assert abs(int(painted.sum()) - 200) <= 2
+
+
 def saved_class_run(folder, slate, class_count):
     """Save a run of that many long-labelled classes on the slate and return its base path."""
-    return save_rows(folder, class_rows(class_count, "Particle class"), slate)
+    return save_rows(folder, class_rows(class_count, LONG), slate)
 
 
-def class_labels(class_count, prefix="Particle class"):
-    """Return the sorted legend labels of that many classes, as the drawing orders them."""
-    return [row.feature_label for row in class_rows(class_count, prefix)]
-
-
-def suggested_size(message):
-    """Return the long side a refusal message says works."""
-    return int(re.search(r"long_side_px=(\d+) works", message).group(1))
-
-
-def refusal_message(slate, class_count, long_side_px):
-    """Return the ValueError text of the layout step for that many classes at long_side_px, failing when the layout does not refuse."""
-    with pytest.raises(ValueError, match="long_side_px") as refused:
-        slate_drawing.picture_layout(slate, long_side_px, class_labels(class_count))
-    return str(refused.value)
-
-
-def test_a_size_too_small_for_the_legend_is_refused_before_anything_is_written(tmp_path):
-    """Eleven classes at 30 pixels cannot fit a legend under a square, so writing the stills names long_side_px and leaves the folder as it was."""
+def test_a_size_below_the_minimum_is_refused_before_anything_is_written(tmp_path):
+    """One pixel below the minimum raises a ValueError naming long_side_px and the minimum, and the folder is as it was."""
     base = saved_class_run(tmp_path, SQUARE, 11)
     before = folder_state(tmp_path)
-    with pytest.raises(ValueError, match="long_side_px"):
-        write_still_images(base, 10, long_side_px=30)
+    with pytest.raises(ValueError, match="long_side_px") as refused:
+        write_still_images(base, 10, long_side_px=stills.MIN_LONG_SIDE_PX - 1)
+    assert str(stills.MIN_LONG_SIDE_PX) in str(refused.value)
     assert folder_state(tmp_path) == before
 
 
-def test_a_tall_rectangle_is_refused_and_the_size_named_in_the_refusal_is_accepted():
-    """Eleven classes at 30 pixels on a 100 x 300 rectangle are refused at the layout step; the long_side_px the refusal names is larger and its layout is accepted."""
-    slate = {"shape": "rectangle", "width_um": 100.0, "height_um": 300.0}
-    assert slate_drawing.try_layout(slate, 30, class_labels(11)) is None
-    suggested = suggested_size(refusal_message(slate, 11, 30))
-    assert suggested > 30
-    assert slate_drawing.try_layout(slate, suggested, class_labels(11)) is not None
-
-
-def layout_is_drawable(slate, long_side_px, labels):
-    """Say whether the layout of the labels at long_side_px has its legend inside the picture and a slate of at least the minimum size; fail when it is accepted otherwise."""
-    layout = slate_drawing.try_layout(slate, long_side_px, labels)
-    if layout is None:
-        return False
-    width, height, strip, margin, scale = layout
-    box = slate_drawing.legend_box(width, labels, long_side_px)
-    half_width, half_height = slate_drawing.slate_extent(slate)
-    assert box.x0 >= -0.5 and box.y0 >= -0.5 and box.x1 <= width + 0.5, (slate, long_side_px)
-    assert box.y1 <= strip + 0.5, (slate, long_side_px)
-    assert 2 * max(half_width, half_height) * scale >= slate_drawing.MIN_SLATE_PX - 0.5, (slate, long_side_px)
-    return True
-
-
-SMALL_PICTURE_CASES = [
-    (SQUARE, 11, 30),
-    (CIRCLE, 11, 30),
-    (TALL, 3, 100),
-    (WIDE, 11, 60),
-]
-
-
-def test_every_small_picture_either_draws_a_legend_inside_it_or_is_refused():
-    """For small sizes a layout never has a legend outside the picture or a slate of no size; the rest are ValueErrors naming long_side_px."""
-    drawn = 0
-    refused = 0
-    for case in SMALL_PICTURE_CASES:
-        labels = class_labels(case[1])
-        if layout_is_drawable(case[0], case[2], labels):
-            drawn += 1
-        else:
-            assert "long_side_px" in refusal_message(case[0], case[1], case[2]), case
-            refused += 1
-    assert drawn > 0 and refused > 0
-
-
-def drawn_small_still(slate, class_count, long_side_px):
-    """Return the drawn figure of one step of class_count classes labelled with short names at long_side_px."""
-    figure = stills.build_still_figure(result_of(class_rows(class_count), slate), class_count, long_side_px)
-    figure.canvas.draw()
-    return figure
-
-
-def assert_drawn_inside(figure):
-    """Check the legend lies inside the figure within half a pixel, below the slate, and the slate has positive size."""
-    renderer = figure.canvas.get_renderer()
-    legend_box = figure.legends[0].get_window_extent(renderer)
-    axes_box = figure.axes[0].get_window_extent(renderer)
-    assert axes_box.width > 0 and axes_box.height > 0
-    assert legend_box.x0 >= -0.5 and legend_box.y0 >= -0.5
-    assert legend_box.x1 <= figure.bbox.x1 + 0.5 and legend_box.y1 <= figure.bbox.y1 + 0.5
-    assert legend_box.y1 <= axes_box.y0 + 0.5
-
-
-def test_a_square_with_one_class_at_one_hundred_pixels_is_written_not_refused(tmp_path):
-    """A legend that lies inside the picture up to rounding noise is not refused: the still is written and its legend is inside the picture."""
-    base = save_rows(tmp_path, class_rows(1), SQUARE)
-    paths = write_still_images(base, 1, long_side_px=100)
-    assert len(paths) == 1 and paths[0].exists()
-    assert_drawn_inside(drawn_small_still(SQUARE, 1, 100))
-
-
-def test_a_tall_rectangle_with_three_classes_at_eighty_pixels_is_drawn_not_refused():
-    """The 100 x 300 rectangle with three short-labelled classes at 80 pixels has its legend inside the picture and is drawn."""
-    slate = {"shape": "rectangle", "width_um": 100.0, "height_um": 300.0}
-    assert_drawn_inside(drawn_small_still(slate, 3, 80))
-
-
-def test_a_wide_rectangle_with_one_class_at_thirty_pixels_is_drawn_not_refused():
-    """The 300 x 100 rectangle with one class at 30 pixels, whose legend edge lies on the picture edge up to rounding noise, is drawn."""
-    slate = {"shape": "rectangle", "width_um": 300.0, "height_um": 100.0}
-    assert_drawn_inside(drawn_small_still(slate, 1, 30))
+def test_exactly_the_minimum_size_is_drawn(tmp_path):
+    """The minimum itself is accepted: a PNG is written for every shown step."""
+    base = saved_class_run(tmp_path, SQUARE, 11)
+    paths = write_still_images(base, 10, long_side_px=stills.MIN_LONG_SIDE_PX)
+    assert [path.name for path in paths] == ["run_step_10.png", "run_step_11.png"]
+    assert all(path.read_bytes().startswith(b"\x89PNG") for path in paths)

@@ -45,9 +45,10 @@ def test_guide_holds_the_command_the_functions_the_arguments_and_the_names():
 
 
 def test_guide_states_what_long_side_px_measures_for_each_picture():
-    """The guide says long_side_px is the PNG's long side for stills and the number of grid cells along the slate's long side for the packing map."""
+    """The guide says long_side_px is the slate's long side in each still PNG, with the legend added below it, and the number of grid cells along the slate's long side for the packing map."""
     guide = guide_text()
-    assert "long side of each PNG" in guide
+    assert "long side of the slate in each PNG" in guide
+    assert "at least 400" in guide
     assert "number of grid cells along the long side of the slate" in guide
 
 
