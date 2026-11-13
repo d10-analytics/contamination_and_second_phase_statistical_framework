@@ -114,7 +114,7 @@ def build_slate_frame(result, step):
     axes.set_aspect("equal")
     axes.set_axis_off()
     slate_drawing.draw_slate(axes, result.slate, result.rows[:step], colours)
-    slate_drawing.draw_legend(figure, colours)
+    slate_drawing.draw_legend(figure, colours, LEGEND_ROOM * FRAME_HEIGHT_PX)
     return figure
 
 

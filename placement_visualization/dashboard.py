@@ -177,5 +177,5 @@ def build_dashboard_figure(result, data, step, width_px=1920, height_px=1080):
     draw_histogram(figure.add_subplot(grid[0, 1]), data, step)
     draw_lines(figure.add_subplot(grid[1, 0]), data, step)
     draw_bars(figure.add_subplot(grid[1, 1]), data, step)
-    slate_drawing.draw_legend(figure, colours)
+    slate_drawing.draw_legend(figure, colours, LEGEND_ROOM * height_px)
     return figure
