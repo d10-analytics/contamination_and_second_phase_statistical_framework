@@ -43,7 +43,7 @@ Import the three drawing functions from `placement_visualization` and `read_plac
 What each argument means:
 
 - `every`: a whole number of 1 or more. A step is one particle taken, placed or not, in the saved order. The shown steps are `every`, `2 x every` and so on up to the particle count. The last step is always shown. The stills and the video use the same shown steps.
-- `video_seconds`: how long the video lasts, in seconds. The video has `round(video_seconds x fps)` frames. Each shown step is held for an equal share of them. A step needs at least one frame. If the video is too short, the function stops before it draws anything and names the smallest `every` that works.
+- `video_seconds`: how long the video lasts, in seconds. The video has `round(video_seconds x fps)` frames, with a half rounding up. Each shown step is held for an equal share of them, as near as whole frames allow, so two steps' holds differ by at most one frame. A step needs at least one frame. If the video is too short, the function stops before it draws anything and names the smallest `every` that works.
 - `fps`: the video frame rate. The default is 30.
 - `layout`: `slate` shows only the slate, with a legend. `dashboard` shows the slate with a size histogram, a line graph over the steps and a bar chart by size bin. Both layouts are 1920 x 1080 pixels. The video is H.264 with the `yuv420p` pixel format. The function prints the length of the video to the terminal before it starts to draw.
 - `dashboard`: this is the name of the second `layout`. It is not an argument of its own.

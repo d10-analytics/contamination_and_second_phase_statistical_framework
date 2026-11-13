@@ -1,16 +1,17 @@
 # This file writes the time-lapse video of a saved placement run. Each shown
-# step (the same steps the still images use) is drawn once at 1920 x 1080 and
-# handed to matplotlib's ffmpeg writer at a rate of shown steps per video
-# second; ffmpeg then repeats frames to reach the chosen frame rate, so the
-# video has exactly round(video_seconds x fps) frames (a half rounds up, as
-# ffmpeg does) without drawing any step more than once. Everything that can be
-# refused is refused before the ffmpeg lookup and before any output: the
-# arguments, the saved files, the destination and a video too short to give
-# every shown step one frame. ffmpeg is looked up when the video is written,
-# never when the folder is imported, so a missing ffmpeg stops only this
-# function. The video is encoded to a hidden temporary file and renamed into
-# place, and the temporary file is always removed.
-
+# step (the same steps the still images use) is drawn once at 1920 x 1080. Its
+# frame bytes are sent to matplotlib's ffmpeg writer, which encodes at the
+# chosen frame rate, once for every frame the step is held. The holds are whole
+# frames worked out here, so the video has exactly round(video_seconds x fps)
+# frames (a half rounds up), shared as evenly as whole frames allow, and no
+# step is drawn more than once. Everything that can be refused is refused
+# before the ffmpeg lookup and before any output: the arguments, the saved
+# files, the destination and a video too short to give every shown step one
+# frame. ffmpeg is looked up when the video is written, never when the folder
+# is imported, so a missing ffmpeg stops only this function. The video is
+# encoded to a hidden temporary file and renamed into place, and the temporary
+# file is always removed.
+import io
 import math
 import os
 import shutil
@@ -47,8 +48,19 @@ def video_path(base_path, layout):
 
 
 def frame_count(video_seconds, fps):
-    """Return the number of frames ffmpeg writes: video_seconds x fps rounded, a half rounding up."""
+    """Return the number of frames the video has: video_seconds x fps rounded, a half rounding up."""
     return math.floor(video_seconds * fps + 0.5)
+
+
+def frame_holds(shown_count, total_frames):
+    """Return how many frames each shown step is held for: the k-th step ends at frame floor(k x total / shown), so the holds add up to total_frames and differ by at most one."""
+    holds = []
+    previous_end = 0
+    for position in range(1, shown_count + 1):
+        end = position * total_frames // shown_count
+        holds.append(end - previous_end)
+        previous_end = end
+    return holds
 
 
 def shown_step_count(particle_count, every):
@@ -150,28 +162,42 @@ def make_frames(result, layout, shown):
     return DashboardFrames(result, dashboard.panel_data(result, shown))
 
 
-def encode(frames, shown, video_seconds, fps, ffmpeg, temporary):
-    """Draw each shown step once and pipe it to ffmpeg, which writes the mp4 at the temporary name."""
+class HeldFrameWriter(FFMpegWriter):
+    """The matplotlib ffmpeg writer with one addition: a drawn frame can be sent several times."""
+
+    def grab_frame_held(self, hold):
+        """Draw the current figure once, as grab_frame does, and send its bytes to ffmpeg hold times."""
+        self.fig.set_size_inches(self._w, self._h)
+        buffer = io.BytesIO()
+        self.fig.savefig(buffer, format=self.frame_format, dpi=self.dpi)
+        frame_bytes = buffer.getvalue()
+        for _ in range(hold):
+            self._proc.stdin.write(frame_bytes)
+
+
+def encode(frames, shown, holds, fps, ffmpeg, temporary):
+    """Draw each shown step once and send it to ffmpeg for its held frames; ffmpeg writes the mp4 at the temporary name."""
     with matplotlib.rc_context({"animation.ffmpeg_path": ffmpeg}):
-        writer = FFMpegWriter(
-            fps=len(shown) / video_seconds,
+        writer = HeldFrameWriter(
+            fps=fps,
             codec=CODEC,
             bitrate=BITRATE_KBPS,
-            extra_args=["-pix_fmt", "yuv420p", "-r", str(fps), "-f", "mp4"],
+            extra_args=["-pix_fmt", "yuv420p", "-f", "mp4"],
         )
         first = frames.figure_for(shown[0])
         with writer.saving(first, str(temporary), FRAME_DPI):
-            writer.grab_frame()
-            for step in shown[1:]:
+            writer.grab_frame_held(holds[0])
+            for step, hold in zip(shown[1:], holds[1:]):
                 writer.fig = frames.figure_for(step)
-                writer.grab_frame()
+                writer.grab_frame_held(hold)
 
 
 def write_video(base_path, every, video_seconds, *, fps=30, layout="slate", overwrite=False):
     """Write <base>_<layout>.mp4 and return its path.
 
-    The video lasts video_seconds and has round(video_seconds x fps) frames;
-    each shown step is held for an equal share. Arguments, the saved files, the
+    The video lasts video_seconds and has round(video_seconds x fps) frames,
+    a half rounding up; each shown step is held for an equal share, as near as
+    whole frames allow (the holds differ by at most one frame). Arguments, the saved files, the
     destination, the schedule and the ffmpeg lookup are all checked before the
     first frame, each refusal a ValueError except a missing ffmpeg, which is a
     RuntimeError. A failure while encoding leaves no temporary file and any
@@ -194,10 +220,11 @@ def write_video(base_path, every, video_seconds, *, fps=30, layout="slate", over
         f"video: {video_seconds!r} s, {len(shown)} shown steps, {fps_number!r} fps, {frames} frames",
         file=sys.stderr,
     )
+    holds = frame_holds(len(shown), frames)
     builder = make_frames(result, layout, shown)
     temporary = outputs.temporary_path_for(destination)
     try:
-        encode(builder, shown, video_seconds, fps, ffmpeg, temporary)
+        encode(builder, shown, holds, fps, ffmpeg, temporary)
         os.replace(temporary, destination)
     finally:
         temporary.unlink(missing_ok=True)
