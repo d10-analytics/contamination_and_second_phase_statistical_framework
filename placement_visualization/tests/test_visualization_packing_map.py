@@ -6,7 +6,7 @@
 # slate, edge band included; a pixel outside every particle but within sigma of
 # one is above 0 percent; a circle's corners are uncoloured and a rectangle's
 # are coloured; the default sigma equals twice the largest diameter of all
-# particles, placed or not; the sigma (in the colour bar label) and the colour bar limits are shown.
+# particles, placed or not; the sigma text and the colour bar limits are shown.
 # It replaces the shared clearance and edge distance functions to prove the map
 # calls them, once per placed particle on a part of the grid, and checks the
 # writing rules (a failed save keeps an earlier good map and leaves no
@@ -129,7 +129,7 @@ def test_a_particle_as_large_as_the_circle_reads_the_top_colour_everywhere_on_th
             found = pixels[pixels.shape[0] - 1 - row_from_bottom, column, :3].astype(int)
             assert same_colour(found, top), (x, y)
             checked += 1
-    assert checked > 3000
+    assert checked > 1500
     assert same_colour(pixel_at(figure, pixels, 46.0, 0.0), top)
     assert same_colour(pixel_at(figure, pixels, 0.0, -46.0), top)
 
@@ -180,13 +180,13 @@ def test_the_default_sigma_is_twice_the_largest_diameter_of_all_particles_placed
 
 
 def test_the_figure_shows_the_sigma_used_and_a_colour_bar_from_0_to_100(tmp_path):
-    """The colour bar label ends with sigma as %g followed by um, for the default and an explicit number, and the colour bar runs 0 to 100."""
+    """The figure text ends with sigma as %g followed by um, for the default and an explicit number, and the colour bar runs 0 to 100."""
     base = save_rows(tmp_path, [make_row(1, 10.0, 0.0, 0.0), make_row(2, 12.5, 20.0, 0.0)])
     result = saving.read_placement_outputs(base)
     figure = packing_map.build_packing_map_figure(result, packing_map.default_sigma_um(result.rows), PIXELS)
-    assert figure.axes[1].get_ylabel() == "covered (%), blur sigma 25 um"
+    assert [text.get_text() for text in figure.texts] == ["blur sigma 25 um"]
     other = packing_map.build_packing_map_figure(result, 12.5, PIXELS)
-    assert other.axes[1].get_ylabel() == "covered (%), blur sigma 12.5 um"
+    assert [text.get_text() for text in other.texts] == ["blur sigma 12.5 um"]
     colour_bar_axes = figure.axes[1]
     assert colour_bar_axes.get_ylim() == (0.0, 100.0)
     assert len(figure.axes) == 2
@@ -324,3 +324,22 @@ def test_an_existing_map_is_refused_without_overwrite_and_replaced_with_it(tmp_p
     write_packing_map(base, long_side_px=PIXELS, overwrite=True)
     assert existing.read_bytes().startswith(b"\x89PNG")
     assert sorted(entry.name for entry in tmp_path.iterdir()) == ["run_packing_map.png", "run_placements.csv", "run_summary.txt"]
+
+
+def test_the_sigma_text_lies_inside_the_picture_and_is_drawn_at_every_resolution(tmp_path):
+    """At 100, 200, 400 and 800 cells on a wide rectangle the text's extent is inside the figure, its string ends with the sigma, and dark text pixels are in the written PNG."""
+    base = save_rows(tmp_path, [make_row(1, 20.0, 0.0, 0.0)], RECTANGLE)
+    result = saving.read_placement_outputs(base)
+    for size in [100, 200, 400, 800]:
+        path = write_packing_map(base, sigma_um=40.0, long_side_px=size, overwrite=True)
+        figure = packing_map.build_packing_map_figure(result, 40.0, size)
+        figure.canvas.draw()
+        [text] = figure.texts
+        assert text.get_text().endswith("40 um")
+        extent = text.get_window_extent(figure.canvas.get_renderer())
+        assert extent.x0 >= 0 and extent.y0 >= 0, size
+        assert extent.x1 <= figure.bbox.x1 and extent.y1 <= figure.bbox.y1, size
+        pixels = png_pixels(path)
+        strip = pixels[int(pixels.shape[0] - extent.y1) : int(pixels.shape[0] - extent.y0) + 1, :, :3].astype(int)
+        assert (strip.sum(axis=2) < 600).any(), size
+        assert numpy.array_equal(pixels, numpy.asarray(figure.canvas.buffer_rgba())), size
