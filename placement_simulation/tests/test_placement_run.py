@@ -556,7 +556,12 @@ def test_a_refused_csv_prints_no_coverage_line(tmp_path, capsys):
 def test_a_recorded_seed_repeats_a_shuffled_run_with_its_source_order(tmp_path, monkeypatch):
     """With no seed and order shuffled, the recorded seed reproduces the source indices and every outcome."""
     path = write_csv(tmp_path / "mixed.csv", [12.0, 18.0, 24.0, 30.0, 36.0, 42.0, 48.0, 54.0])
-    monkeypatch.setattr(placement.secrets, "randbits", lambda bits: 987654321)
+
+    def fixed_bits(bits):
+        """Return a fixed seed whatever the requested width."""
+        return 987654321
+
+    monkeypatch.setattr(placement.secrets, "randbits", fixed_bits)
     unseeded = place_particles(path, SQUARE_200, max_tries=15, order="shuffled")
     repeated = place_particles(path, SQUARE_200, max_tries=15, order="shuffled", seed=unseeded.seed)
     assert [row.source_index for row in unseeded.rows] != list(range(1, 9))
