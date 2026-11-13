@@ -33,6 +33,19 @@ def make_generated():
     return dataset.generate_dataset(entries, seed=5)
 
 
+def place_with(particles, settings):
+    """Place the particles on the test slate with the named settings."""
+    return place_particles(
+        particles,
+        SQUARE,
+        mode=settings["mode"],
+        order=settings["order"],
+        max_tries=settings["max_tries"],
+        buffer_um=settings["buffer_um"],
+        seed=settings["seed"],
+    )
+
+
 def save_run(tmp_path, kind, settings):
     """Place and save a run for the input kind; return (summary path, placements path, the CSV path or None)."""
     result = make_generated()
@@ -42,7 +55,7 @@ def save_run(tmp_path, kind, settings):
         outputs.write_outputs(result, tmp_path / "sizes.csv")
         source = tmp_path / "sizes.csv"
         particles = source
-    placed = place_particles(particles, SQUARE, **settings)
+    placed = place_with(particles, settings)
     placements_path, summary_path = write_placement_outputs(placed, tmp_path / "run")
     return summary_path, placements_path, source
 
@@ -66,14 +79,17 @@ def refusal(summary_path, measurements_path=None):
     return str(caught.value)
 
 
-@pytest.mark.parametrize("kind", KINDS)
-@pytest.mark.parametrize("settings", MODE_SETTINGS)
-def test_replay_equals_the_saved_placements_byte_for_byte(tmp_path, kind, settings):
+def test_replay_equals_the_saved_placements_byte_for_byte(tmp_path):
     """Replaying a saved run gives the saved placements file's text for each input kind and placement mode."""
-    summary_path, placements_path, _ = save_run(tmp_path, kind, settings)
-    replayed = replay_placement(summary_path)
-    assert saving.serialize_placements(replayed) == placements_path.read_text(encoding="utf-8")
-    assert any(row.placed for row in replayed.rows)
+    for kind in KINDS:
+        for settings in MODE_SETTINGS:
+            folder = tmp_path / (kind + "_" + settings["mode"])
+            folder.mkdir()
+            summary_path, placements_path, _ = save_run(folder, kind, settings)
+            replayed = replay_placement(summary_path)
+            saved_text = placements_path.read_text(encoding="utf-8")
+            assert saving.serialize_placements(replayed) == saved_text, (kind, settings["mode"])
+            assert any(row.placed for row in replayed.rows), (kind, settings["mode"])
 
 
 def test_a_changed_csv_digit_is_refused_before_any_coverage_line(tmp_path, capsys):
@@ -97,7 +113,7 @@ def test_an_edited_generator_result_is_refused_at_replay(tmp_path, capsys):
     result = make_generated()
     first = dataclasses.replace(result.rows[0], equivalent_diameter_um=result.rows[0].equivalent_diameter_um + 1.0)
     edited = dataclasses.replace(result, rows=(first,) + result.rows[1:])
-    placed = place_particles(edited, SQUARE, **RANDOM_SETTINGS)
+    placed = place_with(edited, RANDOM_SETTINGS)
     _, summary_path = write_placement_outputs(placed, tmp_path / "run")
     capsys.readouterr()
     message = refusal(summary_path)
@@ -145,19 +161,21 @@ def add_input_key(block):
     block["input"]["extra"] = 1
 
 
-@pytest.mark.parametrize(
-    "edit, expected",
-    [
-        (add_extra_key, "has an unexpected key 'extra'"),
-        (set_unknown_kind, "input kind must be 'csv' or 'generator'"),
-        (add_input_key, "has an unexpected key 'extra'"),
-    ],
-)
-def test_a_changed_block_is_refused(tmp_path, edit, expected):
+CHANGED_BLOCKS = [
+    (add_extra_key, "has an unexpected key 'extra'"),
+    (set_unknown_kind, "input kind must be 'csv' or 'generator'"),
+    (add_input_key, "has an unexpected key 'extra'"),
+]
+
+
+def test_a_changed_block_is_refused(tmp_path):
     """An extra key, an unknown input kind or an extra input key is refused with a message naming it."""
-    summary_path, _, _ = save_run(tmp_path, "csv", RANDOM_SETTINGS)
-    edit_summary(summary_path, edit)
-    assert expected in refusal(summary_path)
+    for number, (edit, expected) in enumerate(CHANGED_BLOCKS):
+        folder = tmp_path / str(number)
+        folder.mkdir()
+        summary_path, _, _ = save_run(folder, "csv", RANDOM_SETTINGS)
+        edit_summary(summary_path, edit)
+        assert expected in refusal(summary_path)
 
 
 def test_an_edited_mode_gets_the_message_of_a_fresh_run(tmp_path):
@@ -176,24 +194,26 @@ def change_all_versions(block):
     block["input"]["generator_parameters"]["library_versions"] = dict(other)
 
 
-@pytest.mark.parametrize("kind", KINDS)
-def test_other_library_versions_warn_once_per_library(tmp_path, capsys, kind):
-    """A summary with other versions prints one warning for each of the three libraries, also for generator input."""
-    summary_path, placements_path, _ = save_run(tmp_path, kind, RANDOM_SETTINGS)
-    if kind == "generator":
-        edit_summary(summary_path, change_all_versions)
-    else:
-        edit_summary(summary_path, change_all_versions_csv)
-    capsys.readouterr()
-    replayed = replay_placement(summary_path)
-    warnings = [line for line in capsys.readouterr().err.split("\n") if line.startswith("warning:")]
-    assert len(warnings) == 3
-    assert "python 0.0.1" in warnings[0]
-    assert "numpy 0.0.2" in warnings[1]
-    assert "scipy 0.0.3" in warnings[2]
-    assert saving.serialize_placements(replayed) == placements_path.read_text(encoding="utf-8")
-
-
 def change_all_versions_csv(block):
     """Record other library versions in the settings block of a CSV summary."""
     block["library_versions"] = {"python": "0.0.1", "numpy": "0.0.2", "scipy": "0.0.3"}
+
+
+def test_other_library_versions_warn_once_per_library(tmp_path, capsys):
+    """A summary with other versions prints one warning for each of the three libraries, also for generator input."""
+    for kind in KINDS:
+        folder = tmp_path / kind
+        folder.mkdir()
+        summary_path, placements_path, _ = save_run(folder, kind, RANDOM_SETTINGS)
+        if kind == "generator":
+            edit_summary(summary_path, change_all_versions)
+        else:
+            edit_summary(summary_path, change_all_versions_csv)
+        capsys.readouterr()
+        replayed = replay_placement(summary_path)
+        warnings = [line for line in capsys.readouterr().err.split("\n") if line.startswith("warning:")]
+        assert len(warnings) == 3, kind
+        assert "python 0.0.1" in warnings[0]
+        assert "numpy 0.0.2" in warnings[1]
+        assert "scipy 0.0.3" in warnings[2]
+        assert saving.serialize_placements(replayed) == placements_path.read_text(encoding="utf-8")
