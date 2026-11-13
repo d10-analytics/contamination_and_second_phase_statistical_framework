@@ -47,7 +47,7 @@ What each argument means:
 - `fps`: the video frame rate. The default is 30.
 - `layout`: `slate` shows only the slate, with a legend. `dashboard` shows the slate with a size histogram, a line graph over the steps and a bar chart by size bin. Both layouts are 1920 x 1080 pixels. The video is H.264 with the `yuv420p` pixel format. The function prints the length of the video to the terminal before it starts to draw.
 - `dashboard`: this is the name of the second `layout`. It is not an argument of its own.
-- `long_side_px`: the length, in pixels, of the long side of the slate in a still image or the packing map. The default is 2000. A small number draws faster.
+- `long_side_px`: the default is 2000. For `write_still_images`, it is the length, in pixels, of the long side of each PNG. The slate is drawn inside that picture with a margin and a legend. For `write_packing_map`, it is the number of grid cells along the long side of the slate. The PNG also holds a colour bar and the sigma text, so the slate fills less than that many pixels of it. A small number draws faster.
 - `sigma_um`: the width, in micrometres, of the blur of the packing map. Each pixel shows the covered share of the area around it. The default is twice the largest particle diameter in the file.
 - `overwrite`: with the default `False`, a function refuses to replace a file that exists. It checks every destination before it draws. With `True` it replaces the files.
 

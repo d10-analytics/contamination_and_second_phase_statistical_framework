@@ -53,7 +53,8 @@ BUFFER_UM = 1.0
 
 # A still image is drawn after every 100th particle taken, so the 400 particles
 # give four pictures. The video lasts 2 seconds at 10 frames a second, which is
-# 20 frames for those four steps. The pictures are 400 pixels on their long side.
+# 20 frames for those four steps. A still image is 400 pixels on its long
+# side, and the packing map has 400 cells along the slate's long side.
 STILL_EVERY = 100
 VIDEO_SECONDS = 2
 VIDEO_FPS = 10
