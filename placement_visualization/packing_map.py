@@ -20,7 +20,11 @@ from placement_visualization import picture_files, slate_drawing
 SUFFIX = "_packing_map.png"
 SIGMA_FACTOR = 2.0
 COLOUR_MAP = "viridis"
-COLOUR_BAR_PAD = 0.03
+COLUMN_FRACTION = 0.22
+BAR_START_IN_COLUMN = 0.08
+BAR_WIDTH_IN_COLUMN = 0.2
+BAR_MAX_FONT_POINTS = 10.0
+SPACING_IN_FONTS = 0.35
 TEXT_FILL = 0.7
 TEXT_WIDTH_FRACTION = 0.96
 MIN_FONT_POINTS = 1.0
@@ -105,6 +109,33 @@ def add_sigma_text(figure, sigma_um):
     return text
 
 
+def inside_figure(box, figure):
+    """Say whether a bounding box lies wholly inside the figure."""
+    return box.x0 >= 0 and box.y0 >= 0 and box.x1 <= figure.bbox.x1 and box.y1 <= figure.bbox.y1
+
+
+def add_colour_bar(figure, axes, image):
+    """Add the 0-100 colour bar in a column right of the slate, shrinking its fonts until bar, ticks and label lie wholly inside the figure."""
+    width_px = figure.get_figwidth() * figure.dpi
+    margin = slate_drawing.MARGIN_FRACTION * max(width_px, figure.get_figheight() * figure.dpi) / width_px
+    column = COLUMN_FRACTION
+    position = axes.get_position()
+    axes.set_position([margin, position.y0, 1.0 - 2.0 * margin - column, position.height])
+    axes.apply_aspect()
+    box = axes.get_position()
+    left = 1.0 - margin - column + BAR_START_IN_COLUMN * column
+    cax = figure.add_axes([left, box.y0, BAR_WIDTH_IN_COLUMN * column, box.height])
+    colour_bar = figure.colorbar(image, cax=cax)
+    renderer = figure.canvas.get_renderer()
+    size = BAR_MAX_FONT_POINTS
+    while True:
+        cax.tick_params(labelsize=size, length=SPACING_IN_FONTS * size, pad=SPACING_IN_FONTS * size)
+        colour_bar.set_label("covered (%)", fontsize=size, labelpad=SPACING_IN_FONTS * size)
+        if size <= MIN_FONT_POINTS or inside_figure(cax.get_tightbbox(renderer), figure):
+            return colour_bar
+        size -= FONT_STEP_POINTS
+
+
 def build_packing_map_figure(result, sigma_um, long_side_px):
     """Return the figure: the slate's percentage map on a fixed 0-100 scale with a colour bar and the sigma used printed under the slate."""
     percentage, cell = covered_percentage(result, sigma_um, long_side_px)
@@ -117,8 +148,7 @@ def build_packing_map_figure(result, sigma_um, long_side_px):
     axes.set_xlim(-half_width, half_width)
     axes.set_ylim(-half_height, half_height)
     slate_drawing.draw_outline(axes, result.slate)
-    colour_bar = figure.colorbar(image, ax=axes, pad=COLOUR_BAR_PAD)
-    colour_bar.set_label("covered (%)")
+    add_colour_bar(figure, axes, image)
     add_sigma_text(figure, sigma_um)
     return figure
 
