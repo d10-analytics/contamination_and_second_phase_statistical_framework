@@ -252,3 +252,24 @@ def test_the_map_reads_the_shared_clearance(tmp_path, monkeypatch):
     monkeypatch.setattr(geometry, "clearance", smaller)
     shifted = run_centre(tmp_path, [5.0, 5.0], slate, 0.0, 1.0)
     assert (shifted.rows[1].x_um, shifted.rows[1].y_um) != (0.0, 10.0)
+
+
+def test_equal_and_large_first_orders_match_the_oracle(tmp_path):
+    """Equal radii and large-before-small lists, where the cluster reaches the same distance along every axis.
+
+    A reach measured along one axis only, an update radius without Rmax, or an update applied before the
+    window grows each move a placement away from the oracle here, though small-before-large lists hide them.
+    """
+    slates = [{"shape": "square", "side_um": 100.0}, RECTANGLE_80_40, {"shape": "circle", "diameter_um": 90.0}]
+    lists = [[5.0] * 20, [8.0] * 6 + [2.0] * 20]
+    for slate in slates:
+        for radii in lists:
+            for buffer_um in (0.0, 0.5):
+                result = run_centre(tmp_path, radii, slate, buffer_um, 1.0)
+                expected = oracle_places(slate, radii, buffer_um, 1.0)
+                for row, outcome in zip(result.rows, expected):
+                    if outcome is None:
+                        assert not row.placed
+                    else:
+                        assert row.placed
+                        assert (row.x_um, row.y_um) == outcome
