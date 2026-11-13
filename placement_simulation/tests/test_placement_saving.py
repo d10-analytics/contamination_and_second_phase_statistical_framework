@@ -146,6 +146,7 @@ def test_summary_has_the_readable_lines_and_the_exact_settings_block(tmp_path):
         "input",
         "library_versions",
     ]
+    assert list(block) == list(saving.BLOCK_KEYS)
     assert block["slate"] == SQUARE
     assert block["mode"] == "random"
     assert block["max_tries"] == 5
