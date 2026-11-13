@@ -427,3 +427,34 @@ def test_a_failing_ffmpeg_raises_and_leaves_the_earlier_video_and_no_temporary_f
     assert existing.read_bytes() == b"earlier good video"
     assert folder_state(folder) == before
     assert [entry.name for entry in folder.iterdir() if entry.name.endswith(".tmp")] == []
+
+
+def test_an_exact_one_frame_per_step_schedule_is_accepted_despite_float_rounding(tmp_path, monkeypatch, capsys):
+    """29 steps in 0.29 s at 100 fps (a product of 28.999999999999996) and 58 steps in 1.16 s at 50 fps give one frame each and are accepted."""
+    assert 0.29 * 100 < 29
+    assert 1.16 * 50 < 58
+    for count, seconds, fps in [(29, 0.29, 100), (58, 1.16, 50)]:
+        shown = stills.shown_steps(count, 1)
+        video.check_schedule(shown, count, 1, seconds, fps)
+        assert video.smallest_passing_every(count, seconds, fps) == 1
+        assert video.frame_count(seconds, fps) == count
+    base, folder = run_folder(tmp_path, 29)
+    record = install_fake_ffmpeg(tmp_path, monkeypatch, FAKE_RECORDING)
+    path = write_video(base, 1, 0.29, fps=100)
+    assert path.is_file()
+    assert "video: 0.29 s, 29 shown steps, 100.0 fps, 29 frames\n" in capsys.readouterr().err
+    assert json.loads(record.read_text(encoding="utf-8"))["stdin_bytes"] == 29 * FRAME_BYTES
+
+
+def test_a_genuinely_sub_frame_hold_is_still_refused_near_the_exact_ratio(tmp_path, monkeypatch):
+    """29 steps in 0.28 s at 100 fps is 28 frames: refused naming every=2, while 0.29 s is accepted."""
+    base, folder = run_folder(tmp_path, 29)
+    no_ffmpeg_anywhere(tmp_path, monkeypatch)
+    before = folder_state(folder)
+    with pytest.raises(ValueError, match="every=2") as caught:
+        write_video(base, 1, 0.28, fps=100)
+    assert "longer video" in str(caught.value)
+    assert folder_state(folder) == before
+    assert video.smallest_passing_every(29, 0.28, 100) == 2
+    with pytest.raises(RuntimeError):
+        write_video(base, 1, 0.29, fps=100)
