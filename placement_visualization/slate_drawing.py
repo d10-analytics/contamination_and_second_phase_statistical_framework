@@ -25,8 +25,10 @@ LEGEND_FONT_MARGIN_POINTS = 0.1
 MIN_SLATE_PX = 10
 # Pixel boxes measured by matplotlib carry rounding noise, so a legend that lies
 # inside the picture can measure a tiny fraction of a pixel outside it; every
-# inside check allows this much. ROUNDING_PX absorbs noise in comparisons of two
-# lengths that should be equal.
+# inside check (legend_inside) allows PIXEL_TOLERANCE_PX. The font and column
+# search of add_fitted_legend stays strict: it only chooses a legend that is at
+# least as small, and the picture shows exactly the legend that was measured.
+# ROUNDING_PX absorbs noise in comparisons of two lengths that should be equal.
 PIXEL_TOLERANCE_PX = 0.5
 ROUNDING_PX = 1e-6
 BACKGROUND = "white"
@@ -65,7 +67,7 @@ def add_legend_columns(figure, handles, size):
         columns = (low + high + 1) // 2
         legend = figure.legend(handles=handles, loc="lower center", ncol=columns, frameon=False, fontsize=size)
         box = legend.get_window_extent(renderer)
-        fits = fits_width(box, width_px)
+        fits = box.x0 >= 0 and box.x1 <= width_px
         if low >= high:
             return legend, box
         legend.remove()
@@ -89,9 +91,9 @@ def add_fitted_legend(figure, handles, max_height_px=None):
     while True:
         legend, box = add_legend_columns(figure, handles, size)
         ratio = 1.0
-        if not fits_width(box, width_px):
+        if box.x0 < 0 or box.x1 > width_px:
             ratio = min(ratio, width_px / box.width)
-        if max_height_px is not None and box.y1 > max_height_px + ROUNDING_PX:
+        if max_height_px is not None and box.y1 > max_height_px:
             ratio = min(ratio, max_height_px / box.y1)
         if ratio >= 1.0 or size <= LEGEND_MIN_FONT_POINTS:
             return legend
