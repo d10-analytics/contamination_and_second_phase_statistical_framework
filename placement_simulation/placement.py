@@ -6,6 +6,8 @@
 # saved run uses exactly the same code. Random placement uses two independent
 # random streams made from one seed: the first decides the order, the second
 # draws the candidate locations, so changing the order never moves a location.
+# Centre placement makes one search per particle on a clearance map (see
+# centre_search.py) and never uses the location stream.
 # Coordinates are in micrometres, the origin at the slate centre, x to the
 # right and y up.
 
@@ -18,10 +20,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from placement_simulation import geometry
+from placement_simulation import centre_search, geometry
 from synthetic_data_generation import dataset, outputs
 
-MODES = ("random",)
+MODES = ("random", "centre")
 ORDERS = ("as_given", "shuffled")
 
 
@@ -143,6 +145,8 @@ def check_settings(slate, mode, max_tries, buffer_um, pixel_um, order, seed):
         raise ValueError("mode must be one of " + ", ".join(MODES) + ", got " + repr(mode))
     if isinstance(max_tries, bool) or not isinstance(max_tries, int) or max_tries < 1:
         raise ValueError("max_tries must be a whole number of 1 or more, not " + repr(max_tries))
+    if mode == "centre" and max_tries > 1:
+        raise ValueError("mode centre makes one search per particle, so max_tries must be 1, got " + str(max_tries))
     checked_buffer = check_number("buffer_um", buffer_um, True)
     checked_pixel = check_number("pixel_um", pixel_um, False)
     if not isinstance(order, str) or order not in ORDERS:
@@ -233,6 +237,43 @@ def place_randomly(ordered, slate, max_tries, buffer_um, location_stream):
     return rows
 
 
+def place_centrally(ordered, slate, buffer_um, pixel_um):
+    """Place each particle at the grid point nearest the slate centre where it fits; return the rows.
+
+    One search per particle. A particle with no fitting grid point is not
+    placed and the run goes on. Every row has one try and no rejections.
+    """
+    max_radius = 0.0
+    for particle in ordered:
+        max_radius = max(max_radius, particle.radius_um)
+    searcher = centre_search.ClearanceSearch(slate, buffer_um, pixel_um, max_radius)
+    rows = []
+    for number, particle in enumerate(ordered, start=1):
+        found = searcher.find(particle.radius_um)
+        x = None
+        y = None
+        if found is not None:
+            searcher.add(found[0], found[1], particle.radius_um)
+            x = float(found[0] * pixel_um)
+            y = float(found[1] * pixel_um)
+        rows.append(
+            PlacementRow(
+                placement_order=number,
+                source_index=particle.source_index,
+                object_id=particle.object_id,
+                feature_label=particle.feature_label,
+                equivalent_diameter_um=particle.equivalent_diameter_um,
+                placed=found is not None,
+                x_um=x,
+                y_um=y,
+                tries=1,
+                edge_rejections=0,
+                overlap_rejections=0,
+            )
+        )
+    return rows
+
+
 def achieved_coverage(rows, slate):
     """Return the placed particles' true area divided by the slate area."""
     total = 0.0
@@ -258,9 +299,12 @@ def place_particles(particles, slate, *, mode="random", max_tries=1, buffer_um=0
     print(f"requested coverage: {requested!r} (total particle area / slate area)", file=sys.stderr)
     order_child, location_child = np.random.SeedSequence(settings["seed"]).spawn(2)
     ordered = order_particles(records, settings["order"], np.random.default_rng(order_child))
-    rows = place_randomly(
-        ordered, settings["slate"], settings["max_tries"], settings["buffer_um"], np.random.default_rng(location_child)
-    )
+    if settings["mode"] == "centre":
+        rows = place_centrally(ordered, settings["slate"], settings["buffer_um"], settings["pixel_um"])
+    else:
+        rows = place_randomly(
+            ordered, settings["slate"], settings["max_tries"], settings["buffer_um"], np.random.default_rng(location_child)
+        )
     return PlacementResult(
         slate=settings["slate"],
         mode=settings["mode"],
