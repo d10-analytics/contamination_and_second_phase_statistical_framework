@@ -5,12 +5,14 @@
 # particle as large as a circular slate reads the top colour everywhere on the
 # slate, edge band included; a pixel outside every particle but within sigma of
 # one is above 0 percent; a circle's corners are uncoloured and a rectangle's
-# are coloured; the default sigma equals twice the largest diameter of all
+# are coloured; the default sigma equals the median diameter of all
 # particles, placed or not; the sigma text and the colour bar limits are shown.
 # It replaces the shared clearance and edge distance functions to prove the map
 # calls them, once per placed particle on a part of the grid, and checks the
 # writing rules (a failed save keeps an earlier good map and leaves no
 # temporary file) and that every refusal is a ValueError with the folder unchanged.
+
+import math
 
 import numpy
 import pytest
@@ -173,26 +175,29 @@ def test_circle_corners_are_uncoloured_and_rectangle_corners_are_coloured(tmp_pa
             assert not same_colour(found, WHITE), (sign_x, sign_y)
 
 
-def test_the_default_sigma_is_twice_the_largest_diameter_of_all_particles_placed_or_not(tmp_path):
-    """The default PNG equals the one with sigma 80 (the unplaced 40 um particle), and differs from the one with sigma 20 (twice the placed 10 um one)."""
-    rows = [make_row(1, 10.0, 0.0, 0.0), make_row(2, 40.0, None, None)]
+def test_the_default_sigma_is_the_median_diameter_of_all_particles_placed_or_not(tmp_path):
+    """With placed 10 and 20 um particles and an unplaced 40 um one, the default PNG equals the one with sigma 20 (the median of all three) and differs from sigma 15 (the median of the placed ones) and sigma 40 (the largest)."""
+    rows = [make_row(1, 10.0, -20.0, 0.0), make_row(2, 20.0, 20.0, 0.0), make_row(3, 40.0, None, None)]
     base = save_rows(tmp_path, rows)
     path = write_packing_map(base, long_side_px=PIXELS)
     default = path.read_bytes()
-    write_packing_map(base, sigma_um=80.0, long_side_px=PIXELS, overwrite=True)
-    assert path.read_bytes() == default
     write_packing_map(base, sigma_um=20.0, long_side_px=PIXELS, overwrite=True)
-    assert path.read_bytes() != default
+    assert path.read_bytes() == default
+    for other_sigma in (15.0, 40.0):
+        write_packing_map(base, sigma_um=other_sigma, long_side_px=PIXELS, overwrite=True)
+        assert path.read_bytes() != default, other_sigma
 
 
 def test_the_figure_shows_the_sigma_used_and_a_colour_bar_from_0_to_100(tmp_path):
-    """The figure text ends with sigma as %g followed by um, for the default and an explicit number, and the colour bar runs 0 to 100."""
-    base = save_rows(tmp_path, [make_row(1, 10.0, 0.0, 0.0), make_row(2, 12.5, 20.0, 0.0)])
+    """The caption is sigma rounded to one decimal followed by um, for the default and an explicit number, then the achieved coverage as the global average packing factor in percent to one decimal; the colour bar runs 0 to 100."""
+    base = save_rows(tmp_path, [make_row(1, 10.0, 0.0, 0.0), make_row(2, 12.0, 20.0, 0.0)])
     result = saving.read_placement_outputs(base)
     figure = packing_map.build_packing_map_figure(result, packing_map.default_sigma_um(result.rows), PIXELS)
-    assert [text.get_text() for text in figure.texts] == ["blur sigma 25 um"]
-    other = packing_map.build_packing_map_figure(result, 12.5, PIXELS)
-    assert [text.get_text() for text in other.texts] == ["blur sigma 12.5 um"]
+    packing = "global average packing factor 1.9 %"
+    assert 100.0 * result.achieved_coverage == pytest.approx(100.0 * math.pi * (5.0**2 + 6.0**2) / 100.0**2)
+    assert [text.get_text() for text in figure.texts] == ["blur sigma 11.0 um", packing]
+    other = packing_map.build_packing_map_figure(result, 237.08668, PIXELS)
+    assert [text.get_text() for text in other.texts] == ["blur sigma 237.1 um", packing]
     colour_bar_axes = figure.axes[1]
     assert colour_bar_axes.get_ylim() == (0.0, 100.0)
     assert len(figure.axes) == 2
@@ -333,21 +338,25 @@ def test_an_existing_map_is_refused_without_overwrite_and_replaced_with_it(tmp_p
 
 
 def test_the_sigma_text_lies_inside_the_picture_and_is_drawn_at_every_resolution(tmp_path):
-    """At 100, 200, 400 and 800 cells on a wide rectangle the text's extent is inside the figure, its string ends with the sigma, and dark text pixels are in the written PNG."""
+    """At 100, 200, 400 and 800 cells on a wide rectangle both caption lines lie inside the figure, the sigma line above the packing-factor line without overlap, and dark text pixels of each are in the written PNG."""
     base = save_rows(tmp_path, [make_row(1, 20.0, 0.0, 0.0)], RECTANGLE)
     result = saving.read_placement_outputs(base)
     for size in [100, 200, 400, 800]:
         path = write_packing_map(base, sigma_um=40.0, long_side_px=size, overwrite=True)
         figure = packing_map.build_packing_map_figure(result, 40.0, size)
         figure.canvas.draw()
-        [text] = figure.texts
-        assert text.get_text().endswith("40 um")
-        extent = text.get_window_extent(figure.canvas.get_renderer())
-        assert extent.x0 >= 0 and extent.y0 >= 0, size
-        assert extent.x1 <= figure.bbox.x1 and extent.y1 <= figure.bbox.y1, size
+        sigma_text, packing_text = figure.texts
+        assert sigma_text.get_text().endswith("40.0 um")
+        assert packing_text.get_text().startswith("global average packing factor")
+        renderer = figure.canvas.get_renderer()
+        extents = [text.get_window_extent(renderer) for text in (sigma_text, packing_text)]
+        assert extents[1].y1 <= extents[0].y0, size
         pixels = png_pixels(path)
-        strip = pixels[int(pixels.shape[0] - extent.y1) : int(pixels.shape[0] - extent.y0) + 1, :, :3].astype(int)
-        assert (strip.sum(axis=2) < 600).any(), size
+        for extent in extents:
+            assert extent.x0 >= 0 and extent.y0 >= 0, size
+            assert extent.x1 <= figure.bbox.x1 and extent.y1 <= figure.bbox.y1, size
+            strip = pixels[int(pixels.shape[0] - extent.y1) : int(pixels.shape[0] - extent.y0) + 1, :, :3].astype(int)
+            assert (strip.sum(axis=2) < 600).any(), size
         assert numpy.array_equal(pixels, numpy.asarray(figure.canvas.buffer_rgba())), size
 
 
@@ -378,3 +387,49 @@ def test_the_whole_layout_lies_inside_the_picture_and_the_colour_bar_ticks_are_d
                 top = max(0, int(pixels.shape[0] - extent.y1))
                 region = pixels[top : int(pixels.shape[0] - extent.y0) + 1, int(extent.x0) : int(extent.x1) + 1, :3].astype(int)
                 assert (region.sum(axis=2) < 700).any(), (name, size, tick)
+
+
+def test_the_series_writes_each_map_as_the_single_map_draws_it_and_tiles_them_in_order(tmp_path):
+    """Each series map is named by its sigma to one decimal, None is the median default, each equals write_packing_map at that sigma pixel for pixel, and the grid holds them three to a row in the order given with white in the empty cells."""
+    rows = [make_row(1, 10.0, -20.0, 0.0), make_row(2, 20.0, 20.0, 0.0), make_row(3, 40.0, None, None)]
+    base = save_rows(tmp_path, rows)
+    sigmas = [2.0, None, 30.0, 7.25]
+    paths, grid_path = packing_map.write_packing_map_series(base, sigmas, long_side_px=PIXELS)
+    assert [path.name for path in paths] == ["run_packing_map_sigma_2.0.png", "run_packing_map_sigma_20.0.png", "run_packing_map_sigma_30.0.png", "run_packing_map_sigma_7.2.png"]
+    assert grid_path.name == "run_packing_map_sigma_series.png"
+    single_folder = tmp_path / "single"
+    single_folder.mkdir()
+    single_base = save_rows(single_folder, rows)
+    tiles = []
+    for sigma, path in zip([2.0, 20.0, 30.0, 7.25], paths):
+        single = write_packing_map(single_base, sigma_um=sigma, long_side_px=PIXELS, overwrite=True)
+        tile = png_pixels(path)
+        assert numpy.array_equal(tile, png_pixels(single)), sigma
+        tiles.append(tile)
+    assert not numpy.array_equal(tiles[0], tiles[1])
+    height, width = tiles[0].shape[:2]
+    grid = png_pixels(grid_path)
+    assert grid.shape[:2] == (2 * height, 3 * width)
+    for position, tile in enumerate(tiles):
+        top, left = (position // 3) * height, (position % 3) * width
+        assert numpy.array_equal(grid[top : top + height, left : left + width], tile), position
+    assert numpy.all(grid[height:, width:] == 255)
+
+
+def test_the_series_refuses_an_empty_list_a_repeated_name_and_an_existing_file_before_writing(tmp_path):
+    """An empty list, two sigmas that round to one name, or an existing grid without overwrite raise ValueError and leave the folder as it was; overwrite=True replaces it."""
+    base = save_rows(tmp_path, [make_row(1, 20.0, 0.0, 0.0)])
+    before = folder_state(tmp_path)
+    with pytest.raises(ValueError, match="at least one sigma"):
+        packing_map.write_packing_map_series(base, [], long_side_px=PIXELS)
+    with pytest.raises(ValueError, match="same file"):
+        packing_map.write_packing_map_series(base, [5.0, 5.04], long_side_px=PIXELS)
+    assert folder_state(tmp_path) == before
+    grid = tmp_path / "run_packing_map_sigma_series.png"
+    grid.write_bytes(b"old grid")
+    before = folder_state(tmp_path)
+    with pytest.raises(ValueError, match="overwrite=True"):
+        packing_map.write_packing_map_series(base, [5.0], long_side_px=PIXELS)
+    assert folder_state(tmp_path) == before
+    packing_map.write_packing_map_series(base, [5.0], long_side_px=PIXELS, overwrite=True)
+    assert grid.read_bytes().startswith(b"\x89PNG")
