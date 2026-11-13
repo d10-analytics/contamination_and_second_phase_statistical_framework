@@ -24,7 +24,10 @@ def check_dimension(shape, key, value):
         raise ValueError("slate " + shape + " " + key + " must be a number, not a boolean")
     if not isinstance(value, (int, float, np.integer, np.floating)):
         raise ValueError("slate " + shape + " " + key + " must be a number, got " + repr(value))
-    number = float(value)
+    try:
+        number = float(value)
+    except OverflowError:
+        number = math.inf
     if not math.isfinite(number):
         raise ValueError("slate " + shape + " " + key + " must be finite, got " + repr(value))
     if not number > 0:
