@@ -371,3 +371,14 @@ def test_the_reader_is_exported_and_uses_the_placement_coverage_functions():
 
     assert placement_simulation.read_placement_outputs is saving.read_placement_outputs
     assert saving.placement is placement
+
+
+def test_a_cell_too_long_for_the_csv_reader_is_a_value_error_naming_the_file(tmp_path):
+    """A cell beyond the csv module's field size limit raises a ValueError naming the file, not a csv error."""
+    _, base = save_run(tmp_path, "generator", SQUARE, RANDOM_SETTINGS)
+    table = read_table(base)
+    table[1][2] = "x" * 200000
+    write_table(base, table)
+    message = refusal(base)
+    assert str(placements_file(base)) in message
+    assert "CSV" in message

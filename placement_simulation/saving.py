@@ -249,7 +249,10 @@ def parse_placement_row(cells, position, seen, where):
 
 def parse_placements(text, where):
     """Return the PlacementRow tuple of a placements file's text; raise ValueError naming where for any refusal."""
-    lines = list(csv.reader(io.StringIO(text, newline="")))
+    try:
+        lines = list(csv.reader(io.StringIO(text, newline="")))
+    except csv.Error as error:
+        raise ValueError(f"{where}: the file is not readable as CSV: {error}") from error
     if len(lines) == 0 or tuple(lines[0]) != PLACEMENT_COLUMNS:
         found = lines[0] if len(lines) > 0 else []
         raise ValueError(f"{where}: the header must be {','.join(PLACEMENT_COLUMNS)}, got {','.join(found)!r}")
