@@ -517,3 +517,47 @@ def test_a_requested_coverage_above_one_is_not_refused(tmp_path, capsys):
     assert len(result.rows) == 12
     assert result.achieved_coverage < 1.0
     assert capsys.readouterr().err == COVERAGE_LINE.format(result.requested_coverage)
+
+
+# ---------------------------------------------------------------- reviewer additions
+
+
+def test_the_hashed_bytes_are_the_parsed_bytes_even_if_the_file_changes_during_parsing(tmp_path, monkeypatch):
+    """A file replaced while it is being parsed leaves an identity that matches the text that was parsed."""
+    path = write_csv(tmp_path / "sizes.csv", [10.0, 20.0])
+    original_bytes = path.read_bytes()
+    real_parse = outputs.parse_measurements
+    parsed_texts = []
+
+    def parse_then_replace_file(text):
+        """Parse the given text, then change the file on disk as a concurrent writer would."""
+        parsed_texts.append(text)
+        rows = real_parse(text)
+        path.write_bytes(original_bytes + b"Class A,P3,1.0,5.0,1.0\n")
+        return rows
+
+    monkeypatch.setattr(outputs, "parse_measurements", parse_then_replace_file)
+    _, identity = placement.read_particles(path)
+    assert len(parsed_texts) == 1
+    assert identity["measurements_sha256"] == hashlib.sha256(parsed_texts[0].encode("utf-8")).hexdigest()
+    assert identity["measurements_sha256"] == hashlib.sha256(original_bytes).hexdigest()
+
+
+def test_a_refused_csv_prints_no_coverage_line(tmp_path, capsys):
+    """An unreadable or malformed CSV is refused before the coverage line is printed."""
+    bad = tmp_path / "bad.csv"
+    bad.write_text("object_id,feature_label\nP1,A\n", encoding="utf-8")
+    for path in (bad, tmp_path / "absent.csv", tmp_path):
+        with pytest.raises(ValueError):
+            place_particles(path, SQUARE_200, seed=1)
+        assert capsys.readouterr().err == ""
+
+
+def test_a_recorded_seed_repeats_a_shuffled_run_with_its_source_order(tmp_path, monkeypatch):
+    """With no seed and order shuffled, the recorded seed reproduces the source indices and every outcome."""
+    path = write_csv(tmp_path / "mixed.csv", [12.0, 18.0, 24.0, 30.0, 36.0, 42.0, 48.0, 54.0])
+    monkeypatch.setattr(placement.secrets, "randbits", lambda bits: 987654321)
+    unseeded = place_particles(path, SQUARE_200, max_tries=15, order="shuffled")
+    repeated = place_particles(path, SQUARE_200, max_tries=15, order="shuffled", seed=unseeded.seed)
+    assert [row.source_index for row in unseeded.rows] != list(range(1, 9))
+    assert repeated == unseeded
