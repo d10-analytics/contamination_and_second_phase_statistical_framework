@@ -17,6 +17,7 @@ import pytest
 from matplotlib import colormaps
 from matplotlib.figure import Figure
 from matplotlib.image import imread
+from matplotlib.text import Text
 
 from placement_simulation import geometry, saving
 from placement_simulation.placement import PlacementResult, PlacementRow
@@ -106,6 +107,11 @@ def pixel_at(figure, pixels, x, y):
 def scale_colour(percentage):
     """Return the colour bar colour at the percentage as 0-255 integers."""
     return numpy.round(numpy.array(colormaps[packing_map.COLOUR_MAP](percentage / 100.0)[:3]) * 255).astype(int)
+
+
+def box_inside(box, figure):
+    """Say whether a bounding box lies wholly inside the figure."""
+    return bool(box.x0 >= 0 and box.y0 >= 0 and box.x1 <= figure.bbox.x1 and box.y1 <= figure.bbox.y1)
 
 
 def same_colour(found, expected):
@@ -343,3 +349,32 @@ def test_the_sigma_text_lies_inside_the_picture_and_is_drawn_at_every_resolution
         strip = pixels[int(pixels.shape[0] - extent.y1) : int(pixels.shape[0] - extent.y0) + 1, :, :3].astype(int)
         assert (strip.sum(axis=2) < 600).any(), size
         assert numpy.array_equal(pixels, numpy.asarray(figure.canvas.buffer_rgba())), size
+
+
+def test_the_whole_layout_lies_inside_the_picture_and_the_colour_bar_ticks_are_drawn(tmp_path):
+    """At 100, 200, 400 and 800 cells on a rectangle and a square: the colour bar's tight box, every visible text and the tick labels 0 and 100 lie inside the figure, and non-background pixels are in the PNG at both tick labels."""
+    for name, slate in [("rectangle", RECTANGLE), ("square", SQUARE)]:
+        folder = tmp_path / name
+        folder.mkdir()
+        base = save_rows(folder, [make_row(1, 20.0, 0.0, 0.0)], slate)
+        result = saving.read_placement_outputs(base)
+        for size in [100, 200, 400, 800]:
+            path = write_packing_map(base, sigma_um=5.0, long_side_px=size, overwrite=True)
+            figure = packing_map.build_packing_map_figure(result, 5.0, size)
+            figure.canvas.draw()
+            renderer = figure.canvas.get_renderer()
+            pixels = png_pixels(path)
+            assert numpy.array_equal(pixels, numpy.asarray(figure.canvas.buffer_rgba())), (name, size)
+            colour_bar_axes = figure.axes[1]
+            tight = colour_bar_axes.get_tightbbox(renderer)
+            assert box_inside(tight, figure), (name, size, tight)
+            for artist in figure.findobj(Text):
+                if artist.get_visible() and artist.get_text() != "":
+                    assert box_inside(artist.get_window_extent(renderer), figure), (name, size, artist.get_text())
+            assert colour_bar_axes.get_ylabel() == "covered (%)"
+            labelled = {label.get_text(): label for label in colour_bar_axes.get_yticklabels()}
+            for tick in ["0", "100"]:
+                extent = labelled[tick].get_window_extent(renderer)
+                top = max(0, int(pixels.shape[0] - extent.y1))
+                region = pixels[top : int(pixels.shape[0] - extent.y0) + 1, int(extent.x0) : int(extent.x1) + 1, :3].astype(int)
+                assert (region.sum(axis=2) < 700).any(), (name, size, tick)
