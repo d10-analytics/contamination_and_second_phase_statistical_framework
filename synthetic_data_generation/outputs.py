@@ -236,6 +236,24 @@ def build_summary_text(result, csv_name, summary_name):
     return "\n".join(lines) + "\n"
 
 
+def check_paths(paths, overwrite, overwrite_hint):
+    """Check each destination in order and raise ValueError for a folder, a non-regular file or an existing file.
+
+    An existing regular file is refused unless overwrite is true; the message
+    ends with "pass {overwrite_hint} to replace it".
+    """
+    for destination in paths:
+        destination = Path(destination)
+        if destination.is_dir():
+            raise ValueError(f"{str(destination)!r} is a folder; choose a file name instead")
+        if not os.path.lexists(destination):
+            continue
+        if not destination.is_file():
+            raise ValueError(f"{str(destination)!r} exists and is not a regular file")
+        if not overwrite:
+            raise ValueError(f"{str(destination)!r} already exists; pass {overwrite_hint} to replace it")
+
+
 def check_destinations(csv_path, overwrite=False):
     """Check the output paths before anything is generated or written; return the summary path or raise ValueError."""
     csv_path = Path(csv_path)
@@ -244,17 +262,7 @@ def check_destinations(csv_path, overwrite=False):
     if not csv_path.parent.is_dir():
         raise ValueError(f"the folder {str(csv_path.parent)!r} does not exist")
     summary_path = summary_path_for(csv_path)
-    for destination in (csv_path, summary_path):
-        if destination.is_dir():
-            raise ValueError(f"{str(destination)!r} is a folder; choose a file name instead")
-        if not os.path.lexists(destination):
-            continue
-        if not destination.is_file():
-            raise ValueError(f"{str(destination)!r} exists and is not a regular file")
-        if not overwrite:
-            raise ValueError(
-                f"{str(destination)!r} already exists; pass overwrite=True (command line: --overwrite) to replace it"
-            )
+    check_paths([csv_path, summary_path], overwrite, "overwrite=True (command line: --overwrite)")
     return summary_path
 
 
@@ -276,31 +284,65 @@ def remove_files(paths):
         path.unlink(missing_ok=True)
 
 
+def describe_replaced(replaced):
+    """Return the text that names each replaced (description, path) pair, in order, with the right verb."""
+    names = []
+    for description, path in replaced:
+        names.append(f"the {description} {str(path)!r}")
+    verb = "was" if len(names) == 1 else "were"
+    return " and ".join(names) + " " + verb
+
+
+def rename_into_place(planned, temporaries, existed):
+    """Rename each temporary file onto its destination in order; undo or report as the contract says on a failure."""
+    replaced = []
+    created = []
+    for position, (path, _text, description) in enumerate(planned):
+        try:
+            os.replace(temporaries[position], path)
+        except OSError as error:
+            remove_files(created)
+            if len(replaced) == 0:
+                raise
+            raise OSError(
+                f"the {description} {str(path)!r} could not be written ({error}); "
+                f"{describe_replaced(replaced)} replaced and the {description} was not"
+            ) from error
+        if existed[position]:
+            replaced.append((description, path))
+        else:
+            created.append(path)
+
+
+def write_files_together(planned):
+    """Write every (path, text, description) entry, all or nothing as far as a failure can be detected.
+
+    Which destinations already exist is recorded first, every temporary file
+    is written before any rename, and the temporary files are always removed.
+    """
+    located = []
+    for path, text, description in planned:
+        located.append((Path(path), text, description))
+    existed = []
+    temporaries = []
+    for path, _text, _description in located:
+        existed.append(path.exists())
+        temporaries.append(temporary_path_for(path))
+    try:
+        for position, (_path, text, _description) in enumerate(located):
+            write_temporary_file(temporaries[position], text)
+        rename_into_place(located, temporaries, existed)
+    finally:
+        remove_files(temporaries)
+
+
 def write_outputs(result, csv_path, overwrite=False):
     """Write the CSV and its summary beside it, all or nothing as far as a failure can be detected."""
     csv_path = Path(csv_path)
     summary_path = check_destinations(csv_path, overwrite)
     csv_text = serialize_csv(result)
     summary_text = build_summary_text(result, csv_path.name, summary_path.name)
-    csv_existed = csv_path.exists()
-    csv_temporary = temporary_path_for(csv_path)
-    summary_temporary = temporary_path_for(summary_path)
-    try:
-        write_temporary_file(csv_temporary, csv_text)
-        write_temporary_file(summary_temporary, summary_text)
-        os.replace(csv_temporary, csv_path)
-        try:
-            os.replace(summary_temporary, summary_path)
-        except OSError as error:
-            if csv_existed:
-                raise OSError(
-                    f"the summary {str(summary_path)!r} could not be written ({error}); "
-                    f"the measurements file {str(csv_path)!r} was replaced and the summary was not"
-                ) from error
-            csv_path.unlink(missing_ok=True)
-            raise
-    finally:
-        remove_files([csv_temporary, summary_temporary])
+    write_files_together([(csv_path, csv_text, "measurements file"), (summary_path, summary_text, "summary")])
 
 
 def find_single_line(lines, marker, description):
