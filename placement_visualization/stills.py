@@ -8,6 +8,12 @@ from pathlib import Path
 
 from placement_visualization import picture_files, slate_drawing
 
+# Below this size the 10 point legend, about 14 pixels a row, would take a large
+# share of a picture whose slate is only a few hundred pixels across, and the
+# slate's particles would be a few pixels each; 400 pixels leaves a slate that
+# is clearly larger than a legend of a few rows.
+MIN_LONG_SIDE_PX = 400
+
 
 def shown_steps(particle_count, every):
     """Return the shown steps: every, 2*every, ... up to the count, plus the count itself when it is not a multiple of every."""
@@ -28,16 +34,19 @@ def still_paths(base_path, steps, particle_count):
 
 
 def build_still_figure(result, step, long_side_px):
-    """Return the figure for one step: the slate with the particles placed among the first step taken, and the legend."""
+    """Return the figure for one step: the slate, its long side long_side_px pixels, with the particles placed among the first step taken, and the legend below it."""
     colours = slate_drawing.class_colours(result.rows)
-    figure, axes = slate_drawing.make_slate_figure(result.slate, long_side_px, list(colours))
+    figure, axes = slate_drawing.make_slate_figure_with_legend(result.slate, long_side_px, colours)
     slate_drawing.draw_slate(axes, result.slate, result.rows[:step], colours)
-    slate_drawing.draw_legend(figure, colours)
     return figure
 
 
 def write_still_images(base_path, every, *, long_side_px=2000, overwrite=False):
     """Write one PNG per shown step beside base_path and return their paths in step order.
+
+    long_side_px is the long side of the slate in pixels, at least MIN_LONG_SIDE_PX;
+    the legend of the classes is added below the slate, so a PNG is taller than
+    that (or, for a slate narrower than its legend, wider).
 
     Arguments, the saved files, the particle count and every destination are
     checked before anything is drawn; each refusal is a ValueError. A failure
@@ -45,6 +54,8 @@ def write_still_images(base_path, every, *, long_side_px=2000, overwrite=False):
     """
     every = picture_files.check_whole_number(every, "every")
     long_side_px = picture_files.check_whole_number(long_side_px, "long_side_px")
+    if long_side_px < MIN_LONG_SIDE_PX:
+        raise ValueError(f"long_side_px must be at least {MIN_LONG_SIDE_PX}, got {long_side_px}")
     result = picture_files.load_placement_result(base_path)
     particle_count = len(result.rows)
     steps = shown_steps(particle_count, every)
