@@ -88,7 +88,7 @@ def covered_percentage(result, sigma_um, long_side_px):
 
 
 def build_packing_map_figure(result, sigma_um, long_side_px):
-    """Return the figure: the slate's percentage map on a fixed 0-100 scale with a colour bar and the sigma used."""
+    """Return the figure: the slate's percentage map on a fixed 0-100 scale with a colour bar and the sigma used in the colour bar label."""
     percentage, cell = covered_percentage(result, sigma_um, long_side_px)
     figure, axes = slate_drawing.make_slate_figure(result.slate, long_side_px, 0)
     half_width, half_height = slate_drawing.slate_extent(result.slate)
@@ -100,8 +100,7 @@ def build_packing_map_figure(result, sigma_um, long_side_px):
     axes.set_ylim(-half_height, half_height)
     slate_drawing.draw_outline(axes, result.slate)
     colour_bar = figure.colorbar(image, ax=axes, pad=COLOUR_BAR_PAD)
-    colour_bar.set_label("covered (%)")
-    figure.text(0.5, 0.01, f"{sigma_um:g} um", ha="center", va="bottom")
+    colour_bar.set_label(f"covered (%), blur sigma {sigma_um:g} um")
     return figure
 
 
