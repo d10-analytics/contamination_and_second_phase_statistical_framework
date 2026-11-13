@@ -580,3 +580,130 @@ def test_read_summary_refusals_match_generate_dataset_messages_exactly(tmp_path)
         with pytest.raises(ValueError) as refused:
             outputs.read_summary(summary_path)
         assert str(refused.value) == message_from_generate(entry_list, settings)
+
+
+HEADER = "feature_label,object_id,contour_area_um2,equivalent_diameter_um,volume_um3\n"
+
+
+def write_text(tmp_path, text, name="measurements.csv"):
+    """Write text to a file in tmp_path and return its path."""
+    path = tmp_path / name
+    path.write_text(text, encoding="utf-8", newline="")
+    return path
+
+
+def test_parse_measurements_returns_rows_in_file_order_with_three_keys():
+    """Each row has exactly the three keys, the diameter is a float and file order is kept."""
+    text = HEADER + "B,2,1.0,7.5,3.0\nA,1,2.0,12,4.0\n"
+    assert outputs.parse_measurements(text) == [
+        {"feature_label": "B", "object_id": "2", "equivalent_diameter_um": 7.5},
+        {"feature_label": "A", "object_id": "1", "equivalent_diameter_um": 12.0},
+    ]
+    assert isinstance(outputs.parse_measurements(text)[1]["equivalent_diameter_um"], float)
+
+
+def test_parse_measurements_ignores_extra_columns_and_column_order():
+    """Only the three columns are read, wherever they sit."""
+    text = "equivalent_diameter_um,extra,object_id,feature_label\n5.5,zz,7,cls\n"
+    assert outputs.parse_measurements(text) == [{"feature_label": "cls", "object_id": "7", "equivalent_diameter_um": 5.5}]
+
+
+def test_parse_measurements_header_only_gives_an_empty_list():
+    """A header and no rows give an empty list."""
+    assert outputs.parse_measurements(HEADER) == []
+
+
+def test_parse_measurements_refuses_a_missing_column_by_name():
+    """Dropping any one required column is refused with that column's name."""
+    required = ["feature_label", "object_id", "equivalent_diameter_um"]
+    for column in required:
+        names = [name for name in required if name != column]
+        text = ",".join(names) + "\n" + ",".join("1" for _ in names) + "\n"
+        with pytest.raises(ValueError, match=column):
+            outputs.parse_measurements(text)
+
+
+def test_parse_measurements_refuses_empty_text_naming_a_column():
+    """Empty text has no header, so a required column is reported missing."""
+    with pytest.raises(ValueError, match="feature_label"):
+        outputs.parse_measurements("")
+
+
+def test_parse_measurements_refuses_a_bad_diameter_naming_its_line():
+    """A diameter that is not finite and above 0 names the file line of its row (header is line 1)."""
+    for cell in ["abc", "nan", "inf", "-inf", "0", "-1.5", ""]:
+        text = HEADER + "A,1,1,5.0,1\n" + f"A,2,1,{cell},1\n"
+        with pytest.raises(ValueError) as refused:
+            outputs.parse_measurements(text)
+        assert str(refused.value).startswith("line 3:"), cell
+
+
+def test_parse_measurements_refuses_a_short_row_naming_its_line():
+    """A row with too few cells is refused with its line number."""
+    text = HEADER + "A,1,1,5.0,1\nA,2\n"
+    with pytest.raises(ValueError) as refused:
+        outputs.parse_measurements(text)
+    assert str(refused.value).startswith("line 3:")
+
+
+def test_read_measurements_reads_a_file(tmp_path):
+    """The file reader returns the parsed rows."""
+    path = write_text(tmp_path, HEADER + "A,1,1,5.0,1\n")
+    assert outputs.read_measurements(path) == [{"feature_label": "A", "object_id": "1", "equivalent_diameter_um": 5.0}]
+
+
+def test_read_measurements_refuses_a_missing_path_and_a_folder(tmp_path):
+    """A missing path and a folder are refused with a message naming the path."""
+    with pytest.raises(ValueError) as missing:
+        outputs.read_measurements(tmp_path / "nope.csv")
+    assert str(missing.value) == f"cannot read measurements: '{tmp_path / 'nope.csv'}' does not exist"
+    with pytest.raises(ValueError) as folder:
+        outputs.read_measurements(tmp_path)
+    assert str(folder.value) == f"cannot read measurements: '{tmp_path}' is a directory, not a file"
+
+
+def test_read_measurements_refuses_non_utf8_bytes(tmp_path):
+    """Bytes that are not UTF-8 are refused with a message naming the path."""
+    path = tmp_path / "bad.csv"
+    path.write_bytes(HEADER.encode("utf-8") + b"\xff\xfe,1,1,5,1\n")
+    with pytest.raises(ValueError) as refused:
+        outputs.read_measurements(path)
+    assert str(refused.value).startswith(f"cannot read measurements from '{path}' as UTF-8 text:")
+
+
+def test_read_measurements_prefixes_a_parse_refusal_with_the_path(tmp_path):
+    """A parse refusal from a file starts with the path and keeps the line number."""
+    path = write_text(tmp_path, HEADER + "A,1,1,-1.5,1\n")
+    with pytest.raises(ValueError) as refused:
+        outputs.read_measurements(path)
+    assert str(refused.value).startswith(f"{path}: line 2:")
+
+
+def test_load_measurements_returns_the_bytes_that_were_parsed(tmp_path):
+    """The shared step returns the file's exact bytes along with the rows parsed from them."""
+    path = write_text(tmp_path, HEADER + "A,1,1,5.0,1\n")
+    data, rows = outputs.load_measurements(path)
+    assert data == path.read_bytes()
+    assert rows == outputs.parse_measurements(data.decode("utf-8"))
+
+
+def test_read_measurements_round_trips_a_written_shuffled_file(tmp_path):
+    """Every label, id and diameter written by write_outputs reads back equal, including a comma-and-quote class name."""
+    result = make_result(shuffle=True)
+    csv_path = tmp_path / "out.csv"
+    outputs.write_outputs(result, csv_path)
+    rows = outputs.read_measurements(csv_path)
+    assert len(rows) == len(result.rows) > 0
+    assert any(row["feature_label"] == 'say "hi", ok' for row in rows)
+    for read_row, written in zip(rows, result.rows):
+        assert read_row["feature_label"] == written.feature_label
+        assert read_row["object_id"] == written.object_id
+        assert read_row["equivalent_diameter_um"] == float(written.equivalent_diameter_um)
+
+
+def test_measurement_readers_are_public_names():
+    """Both reader names import from the package."""
+    from synthetic_data_generation import parse_measurements, read_measurements
+
+    assert parse_measurements is outputs.parse_measurements
+    assert read_measurements is outputs.read_measurements
