@@ -11,6 +11,7 @@ import csv
 import datetime
 import io
 import json
+import math
 import os
 import platform
 import sys
@@ -83,6 +84,71 @@ def serialize_csv(result):
             ]
         )
     return buffer.getvalue()
+
+
+MEASUREMENT_COLUMNS = ("feature_label", "object_id", "equivalent_diameter_um")
+
+
+def parse_measurements(text):
+    """Return one dict per data row of a measurements CSV: feature_label, object_id (text) and equivalent_diameter_um (float).
+
+    Other columns are ignored and column order does not matter. A missing
+    required column, or a diameter that is not a finite number above zero,
+    raises ValueError naming the column or the row's 1-based line in the file.
+    """
+    reader = csv.DictReader(io.StringIO(text, newline=""))
+    header = reader.fieldnames or []
+    for column in MEASUREMENT_COLUMNS:
+        if column not in header:
+            raise ValueError(f"the measurements header has no '{column}' column")
+    rows = []
+    for record in reader:
+        line_number = reader.line_num
+        for column in MEASUREMENT_COLUMNS:
+            if record[column] is None:
+                raise ValueError(f"line {line_number}: the row has no '{column}' value")
+        cell = record["equivalent_diameter_um"]
+        try:
+            diameter = float(cell)
+        except ValueError:
+            diameter = float("nan")
+        if not (math.isfinite(diameter) and diameter > 0):
+            raise ValueError(f"line {line_number}: equivalent_diameter_um {cell!r} is not a finite number above 0")
+        rows.append(
+            {
+                "feature_label": record["feature_label"],
+                "object_id": record["object_id"],
+                "equivalent_diameter_um": diameter,
+            }
+        )
+    return rows
+
+
+def load_measurements(path):
+    """Check and read a measurements CSV once; return (its bytes, the rows parsed from exactly those bytes).
+
+    Refusals name the path, as read_entries does. A caller that hashes the file
+    uses these bytes so that it hashes what it parsed.
+    """
+    file_path = Path(path)
+    if file_path.is_dir():
+        raise ValueError(f"cannot read measurements: '{path}' is a directory, not a file")
+    if not file_path.exists():
+        raise ValueError(f"cannot read measurements: '{path}' does not exist")
+    try:
+        data = file_path.read_bytes()
+        text = data.decode("utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ValueError(f"cannot read measurements from '{path}' as UTF-8 text: {error}")
+    try:
+        return data, parse_measurements(text)
+    except ValueError as error:
+        raise ValueError(f"{path}: {error}")
+
+
+def read_measurements(path):
+    """Read a UTF-8 measurements CSV file and return the same rows that parse_measurements gives."""
+    return load_measurements(path)[1]
 
 
 def summary_path_for(csv_path):
